@@ -26,6 +26,9 @@ jobs:
       - name: Install Laravel PHPStan Extension
         run: composer require --dev nunomaduro/larastan --no-interaction --no-progress
 
+      - name: Generate Model Helper
+        run: php artisan code:models
+
       - name: Debug Installed Packages
         run: ls -l vendor/bin/
 
