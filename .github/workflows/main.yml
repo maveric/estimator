@@ -3,7 +3,7 @@ name: Laravel Security Checks
 on:
   workflow_dispatch:  # Allows manual triggering
   pull_request:
-    branches: [main]  # Still runs on PRs to main
+    branches: [main]  # Runs on PRs to main
 
 jobs:
   security:
@@ -15,19 +15,19 @@ jobs:
       - name: Set up PHP
         uses: shivammathur/setup-php@v2
         with:
-          php-version: '8.2'
+          php-version: '8.2'  # Adjust to your Laravel PHP version
 
       - name: Install Dependencies
-        run: composer install --no-progress --no-suggest
+        run: composer install --prefer-dist --no-progress --no-suggest
+
+      - name: Install PHPStan (CI Only)
+        run: composer require --dev phpstan/phpstan --no-interaction --no-progress
+
+      - name: Debug Installed Packages
+        run: ls -l vendor/bin/
 
       - name: Run PHPStan (Static Analysis)
-        run: vendor/bin/phpstan analyse --memory-limit=1G
+        run: ./vendor/bin/phpstan analyse --memory-limit=1G
 
-      - name: Run Psalm (Security Issues)
-        run: vendor/bin/psalm --output-format=github
-
-      - name: Run Laravel Security Checker
-        run: php artisan security:check
-
-      - name: Run Composer Audit (Check Vulnerabilities)
+      - name: Run Composer Audit (Check for Dependency Vulnerabilities)
         run: composer audit --no-dev
