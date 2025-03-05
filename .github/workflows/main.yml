@@ -27,7 +27,7 @@ jobs:
         run: ls -l vendor/bin/
 
       - name: Run PHPStan (Static Analysis)
-        run: ./vendor/bin/phpstan analyse --memory-limit=1G
+        run: ./vendor/bin/phpstan analyse app routes database/migrations --memory-limit=1G
 
       - name: Run Composer Audit (Check for Dependency Vulnerabilities)
         run: composer audit --no-dev
