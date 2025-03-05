@@ -1,8 +1,9 @@
 name: Laravel Security Checks
 
 on:
+  workflow_dispatch:  # Allows manual triggering
   pull_request:
-    branches: [main]
+    branches: [main]  # Still runs on PRs to main
 
 jobs:
   security:
@@ -30,6 +31,3 @@ jobs:
 
       - name: Run Composer Audit (Check Vulnerabilities)
         run: composer audit --no-dev
-
-      - name: Run Mozilla Security Headers Scan
-        run: curl -X POST https://http-observatory.security.mozilla.org/api/v1/analyze?host=yourapp.com
