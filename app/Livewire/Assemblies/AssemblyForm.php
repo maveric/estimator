@@ -11,6 +11,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use App\Models\Settings;
+use App\Models\LaborRate;
 
 #[Layout('layouts.app')]
 class AssemblyForm extends Component
@@ -125,9 +126,15 @@ class AssemblyForm extends Component
         $this->billedPartsCost = 0;
         $this->billedLaborCost = 0;
         
-        // Get the primary labor rate and default markup from settings
-        $primaryLaborRate = Settings::getPrimaryLaborRate();
-        $defaultLaborMarkup = Settings::getDefaultLaborMarkup();
+        // Get the primary labor rate
+        $primaryLaborRate = LaborRate::where('is_primary', true)
+            ->where('tenant_id', auth()->user()->current_tenant_id)
+            ->active()
+            ->first();
+
+        if (!$primaryLaborRate) {
+            throw new \RuntimeException('No primary labor rate found');
+        }
         
         // Calculate total labor units
         $totalLaborUnits = 0;
@@ -143,43 +150,23 @@ class AssemblyForm extends Component
             $materialChargeRate = (float)$dbItem->material_charge_rate;
             $laborUnits = (float)$dbItem->labor_units;
             
-            // Calculate material costs
+            // Calculate parts costs
             $this->unitPartsCost += $materialCostRate * $quantity;
             $this->billedPartsCost += $materialChargeRate * $quantity;
             
-            // Calculate labor costs (labor_units is in minutes)
-            $itemLaborUnits = $laborUnits * $quantity;
-            $totalLaborUnits += $itemLaborUnits;
+            // Calculate labor costs (convert minutes to hours)
+            $laborHours = ($laborUnits * $quantity) / 60;
+            $this->unitLaborCost += $laborHours * $primaryLaborRate->cost_rate;
+            $this->billedLaborCost += $laborHours * $primaryLaborRate->charge_rate;
             
-            // Convert to hours for cost calculation
-            $laborHours = $itemLaborUnits / 60;
-            $this->unitLaborCost += $laborHours * $primaryLaborRate;
-            $this->billedLaborCost += ($laborHours * $primaryLaborRate) * $defaultLaborMarkup;
+            $totalLaborUnits += $laborUnits * $quantity;
         }
         
+        $this->totalLaborUnits = $totalLaborUnits;
+        
         // Calculate totals
-        $this->unitCost = $this->unitPartsCost + $this->unitLaborCost;
-        $this->billedCost = $this->billedPartsCost + $this->billedLaborCost;
-        
-        Log::info('Costs calculated', [
-            'unitCost' => $this->unitCost,
-            'unitPartsCost' => $this->unitPartsCost,
-            'unitLaborCost' => $this->unitLaborCost,
-            'billedCost' => $this->billedCost,
-            'billedPartsCost' => $this->billedPartsCost,
-            'billedLaborCost' => $this->billedLaborCost,
-            'totalLaborUnits' => $totalLaborUnits
-        ]);
-        
-        return [
-            'unitPartsCost' => $this->unitPartsCost,
-            'unitLaborCost' => $this->unitLaborCost,
-            'billedPartsCost' => $this->billedPartsCost,
-            'billedLaborCost' => $this->billedLaborCost,
-            'unitCost' => $this->unitCost,
-            'billedCost' => $this->billedCost,
-            'totalLaborUnits' => $totalLaborUnits
-        ];
+        $this->totalUnitCost = $this->unitPartsCost + $this->unitLaborCost;
+        $this->totalBilledCost = $this->billedPartsCost + $this->billedLaborCost;
     }
 
     public function addItem()
@@ -362,19 +349,19 @@ class AssemblyForm extends Component
             ->orderBy('name')
             ->get();
             
-        // Calculate all costs using the consolidated method
-        $costs = $this->calculateCosts();
+        // Calculate costs before rendering
+        $this->calculateCosts();
         
         return view('livewire.assemblies.form', [
             'availableItems' => $availableItems,
             'categories' => $categories,
-            'totalPartsCost' => $costs['unitPartsCost'],
-            'totalPartsCharge' => $costs['billedPartsCost'],
-            'totalLaborUnits' => $costs['totalLaborUnits'],
-            'laborCost' => $costs['unitLaborCost'],
-            'laborCharge' => $costs['billedLaborCost'],
-            'totalCost' => $costs['unitCost'],
-            'totalCharge' => $costs['billedCost'],
+            'totalPartsCost' => $this->unitPartsCost,
+            'totalPartsCharge' => $this->billedPartsCost,
+            'totalLaborUnits' => $this->totalLaborUnits,
+            'laborCost' => $this->unitLaborCost,
+            'laborCharge' => $this->billedLaborCost,
+            'totalCost' => $this->totalUnitCost,
+            'totalCharge' => $this->totalBilledCost,
         ]);
     }
 

@@ -110,11 +110,35 @@ class EstimateAssembly extends Model
      */
     public function calculateCost()
     {
-        $itemsCost = $this->items->sum(function ($item) {
-            return $item->calculateCost();
-        });
+        $totalMaterialCost = 0;
+        $totalLaborCost = 0;
+
+        // Get the primary labor rate
+        $primaryLaborRate = LaborRate::where('is_primary', true)
+            ->where('tenant_id', $this->tenant_id)
+            ->active()
+            ->first();
+            
+        if (!$primaryLaborRate) {
+            throw new \RuntimeException('No primary labor rate found');
+        }
+
+        foreach ($this->items as $item) {
+            // Calculate material costs
+            $materialCost = $item->material_cost_rate * $item->quantity;
+            
+            // Calculate labor costs (convert minutes to hours)
+            $laborHours = ($item->labor_units * $item->quantity) / 60;
+            
+            // Use item's labor rate if set, otherwise use primary labor rate
+            $laborRate = $item->laborRate ?? $primaryLaborRate;
+            $laborCost = $laborHours * $laborRate->cost_rate;
+            
+            $totalMaterialCost += $materialCost;
+            $totalLaborCost += $laborCost;
+        }
         
-        return $itemsCost * $this->quantity;
+        return ($totalMaterialCost + $totalLaborCost) * $this->quantity;
     }
 
     /**
@@ -122,11 +146,35 @@ class EstimateAssembly extends Model
      */
     public function calculateCharge()
     {
-        $itemsCharge = $this->items->sum(function ($item) {
-            return $item->calculateCharge();
-        });
+        $totalMaterialCharge = 0;
+        $totalLaborCharge = 0;
+
+        // Get the primary labor rate
+        $primaryLaborRate = LaborRate::where('is_primary', true)
+            ->where('tenant_id', $this->tenant_id)
+            ->active()
+            ->first();
+            
+        if (!$primaryLaborRate) {
+            throw new \RuntimeException('No primary labor rate found');
+        }
+
+        foreach ($this->items as $item) {
+            // Calculate material charges
+            $materialCharge = $item->material_charge_rate * $item->quantity;
+            
+            // Calculate labor charges (convert minutes to hours)
+            $laborHours = ($item->labor_units * $item->quantity) / 60;
+            
+            // Use item's labor rate if set, otherwise use primary labor rate
+            $laborRate = $item->laborRate ?? $primaryLaborRate;
+            $laborCharge = $laborHours * $laborRate->charge_rate;
+            
+            $totalMaterialCharge += $materialCharge;
+            $totalLaborCharge += $laborCharge;
+        }
         
-        return $itemsCharge * $this->quantity;
+        return ($totalMaterialCharge + $totalLaborCharge) * $this->quantity;
     }
 
     /**
@@ -134,7 +182,14 @@ class EstimateAssembly extends Model
      */
     public function getTotalMaterialCostAttribute()
     {
-        return $this->items->sum('total_material_cost') * $this->quantity;
+        $totalMaterialCost = 0;
+
+        foreach ($this->items as $item) {
+            $materialCost = $item->material_cost_rate * $item->quantity;
+            $totalMaterialCost += $materialCost;
+        }
+        
+        return $totalMaterialCost * $this->quantity;
     }
 
     /**
@@ -142,7 +197,14 @@ class EstimateAssembly extends Model
      */
     public function getTotalMaterialChargeAttribute()
     {
-        return $this->items->sum('total_material_charge') * $this->quantity;
+        $totalMaterialCharge = 0;
+
+        foreach ($this->items as $item) {
+            $materialCharge = $item->material_charge_rate * $item->quantity;
+            $totalMaterialCharge += $materialCharge;
+        }
+        
+        return $totalMaterialCharge * $this->quantity;
     }
 
     /**
@@ -150,7 +212,14 @@ class EstimateAssembly extends Model
      */
     public function getTotalLaborUnitsAttribute()
     {
-        return $this->items->sum('total_labor_units') * $this->quantity;
+        $totalLaborUnits = 0;
+
+        foreach ($this->items as $item) {
+            $laborUnits = $item->labor_units * $item->quantity;
+            $totalLaborUnits += $laborUnits;
+        }
+        
+        return $totalLaborUnits * $this->quantity;
     }
 
     /**
@@ -158,7 +227,30 @@ class EstimateAssembly extends Model
      */
     public function getTotalLaborCostAttribute()
     {
-        return $this->items->sum('total_labor_cost') * $this->quantity;
+        $totalLaborCost = 0;
+
+        // Get the primary labor rate
+        $primaryLaborRate = LaborRate::where('is_primary', true)
+            ->where('tenant_id', $this->tenant_id)
+            ->active()
+            ->first();
+            
+        if (!$primaryLaborRate) {
+            throw new \RuntimeException('No primary labor rate found');
+        }
+
+        foreach ($this->items as $item) {
+            // Calculate labor costs (convert minutes to hours)
+            $laborHours = ($item->labor_units * $item->quantity) / 60;
+            
+            // Use item's labor rate if set, otherwise use primary labor rate
+            $laborRate = $item->laborRate ?? $primaryLaborRate;
+            $laborCost = $laborHours * $laborRate->cost_rate;
+            
+            $totalLaborCost += $laborCost;
+        }
+        
+        return $totalLaborCost * $this->quantity;
     }
 
     /**
@@ -166,7 +258,30 @@ class EstimateAssembly extends Model
      */
     public function getTotalLaborChargeAttribute()
     {
-        return $this->items->sum('total_labor_charge') * $this->quantity;
+        $totalLaborCharge = 0;
+
+        // Get the primary labor rate
+        $primaryLaborRate = LaborRate::where('is_primary', true)
+            ->where('tenant_id', $this->tenant_id)
+            ->active()
+            ->first();
+            
+        if (!$primaryLaborRate) {
+            throw new \RuntimeException('No primary labor rate found');
+        }
+
+        foreach ($this->items as $item) {
+            // Calculate labor charges (convert minutes to hours)
+            $laborHours = ($item->labor_units * $item->quantity) / 60;
+            
+            // Use item's labor rate if set, otherwise use primary labor rate
+            $laborRate = $item->laborRate ?? $primaryLaborRate;
+            $laborCharge = $laborHours * $laborRate->charge_rate;
+            
+            $totalLaborCharge += $laborCharge;
+        }
+        
+        return $totalLaborCharge * $this->quantity;
     }
 
     /**
@@ -174,7 +289,7 @@ class EstimateAssembly extends Model
      */
     public function getTotalCostAttribute()
     {
-        return $this->total_material_cost + $this->total_labor_cost;
+        return $this->calculateCost();
     }
 
     /**
@@ -182,6 +297,6 @@ class EstimateAssembly extends Model
      */
     public function getTotalChargeAttribute()
     {
-        return $this->total_material_charge + $this->total_labor_charge;
+        return $this->calculateCharge();
     }
 }

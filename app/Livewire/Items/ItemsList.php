@@ -3,7 +3,7 @@
 namespace App\Livewire\Items;
 
 use App\Models\Item;
-use App\Models\Settings;
+use App\Models\LaborRate;
 use Livewire\Component;
 use Livewire\WithPagination;
 use Livewire\Attributes\Layout;
@@ -21,7 +21,15 @@ class ItemsList extends Component
 
     public function mount()
     {
-        $this->loadSettings();
+        // Get the primary labor rate
+        $this->primaryLaborRate = LaborRate::where('is_primary', true)
+            ->where('tenant_id', auth()->user()->current_tenant_id)
+            ->active()
+            ->first();
+            
+        if (!$this->primaryLaborRate) {
+            throw new \RuntimeException('No primary labor rate found');
+        }
     }
 
     public function loadSettings()

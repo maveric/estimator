@@ -3,11 +3,11 @@
 namespace App\Livewire\Assemblies;
 
 use App\Models\Assembly;
+use App\Models\LaborRate;
 use Livewire\Component;
 use Livewire\WithPagination;
 use Livewire\Attributes\Layout;
 use Illuminate\Support\Facades\Log;
-use App\Models\Settings;
 
 #[Layout('layouts.app')]
 class AssemblyList extends Component
@@ -47,9 +47,15 @@ class AssemblyList extends Component
         $billedLaborCost = 0;
         $totalLaborUnits = 0;
         
-        // Get the primary labor rate and default markup from settings
-        $primaryLaborRate = Settings::getPrimaryLaborRate();
-        $defaultLaborMarkup = Settings::getDefaultLaborMarkup();
+        // Get the primary labor rate
+        $primaryLaborRate = LaborRate::where('is_primary', true)
+            ->where('tenant_id', auth()->user()->current_tenant_id)
+            ->active()
+            ->first();
+            
+        if (!$primaryLaborRate) {
+            throw new \RuntimeException('No primary labor rate found');
+        }
         
         // Calculate costs for each item in the assembly
         foreach ($assembly->items as $item) {
@@ -65,8 +71,8 @@ class AssemblyList extends Component
             
             // Convert to hours for cost calculation
             $laborHours = $itemLaborUnits / 60;
-            $unitLaborCost += $laborHours * $primaryLaborRate;
-            $billedLaborCost += ($laborHours * $primaryLaborRate) * $defaultLaborMarkup;
+            $unitLaborCost += $laborHours * $primaryLaborRate->cost_rate;
+            $billedLaborCost += $laborHours * $primaryLaborRate->charge_rate;
         }
         
         // Calculate totals
@@ -131,9 +137,20 @@ class AssemblyList extends Component
             ->orderBy('name')
             ->get();
         
+        // Get the primary labor rate
+        $primaryLaborRate = LaborRate::where('is_primary', true)
+            ->where('tenant_id', auth()->user()->current_tenant_id)
+            ->active()
+            ->first();
+            
+        if (!$primaryLaborRate) {
+            throw new \RuntimeException('No primary labor rate found');
+        }
+        
         return view('livewire.assemblies.list', [
             'assemblies' => $assemblies,
-            'categories' => $categories
+            'categories' => $categories,
+            'primaryLaborRate' => $primaryLaborRate,
         ]);
     }
 

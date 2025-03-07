@@ -18,23 +18,18 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Contracts\View\View;
 use Illuminate\Support\Facades\Auth;
+use Livewire\Attributes\On;
 
 #[Layout('layouts.app')]
 class EstimateForm extends Component
 {
     public $estimate = null;
     
-    // Customer information
+    // Add back customer information properties
     public $customer_name = '';
     public $customer_email = '';
     public $customer_phone = '';
     public $customer_address = '';
-    
-    // Estimate details
-    public $status = 'draft';
-    public $markup_percentage = 0;
-    public $discount_percentage = 0;
-    public $notes = '';
     public $valid_until = '';
     
     // Items and assemblies
@@ -108,17 +103,130 @@ class EstimateForm extends Component
     public $collapsedPackageAssemblies = [];
     public $collapsedAssemblies = [];
     
+    #[On('customer-information-updated')]
+    public function handleCustomerInformationUpdate($data)
+    {
+        $this->customer_name = $data['customer_name'] ?? '';
+        $this->customer_email = $data['customer_email'] ?? '';
+        $this->customer_phone = $data['customer_phone'] ?? '';
+        $this->customer_address = $data['customer_address'] ?? '';
+        $this->valid_until = $data['valid_until'] ?? '';
+    }
+
+    #[On('estimate-details-updated')]
+    public function handleEstimateDetailsUpdate($data)
+    {
+        try {
+            // Refresh the estimate with all necessary relationships
+            $this->estimate = Estimate::with([
+                'items',
+                'assemblies.items',
+                'packages.assemblies.items'
+            ])->find($this->estimate->id);
+            
+            // Log the markup percentage for debugging
+            Log::info('Estimate details updated:', [
+                'estimate_id' => $this->estimate->id,
+                'markup_percentage' => $this->estimate->markup_percentage,
+                'discount_percentage' => $this->estimate->discount_percentage
+            ]);
+            
+            // Recalculate totals with the fresh data
+            $this->calculateTotals();
+        } catch (\Exception $e) {
+            Log::error('Error handling estimate details update:', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            session()->flash('error', 'Error updating totals: ' . $e->getMessage());
+        }
+    }
+
+    #[On('estimate-items-updated')]
+    public function handleItemsUpdate($data)
+    {
+        try {
+            // Refresh the estimate with all necessary relationships
+            $this->estimate = Estimate::with([
+                'items',
+                'assemblies.items',
+                'packages.assemblies.items'
+            ])->find($this->estimate->id);
+            
+            // Update the items collection
+            $this->items = collect($this->estimate->items);
+            
+            // Recalculate totals with the fresh data
+            $this->calculateTotals();
+            
+            // Dispatch an event to notify other components
+            $this->dispatch('totals-updated', [
+                'totalCost' => $this->totalCost,
+                'totalCharge' => $this->totalCharge
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('Error in handleItemsUpdate:', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            session()->flash('error', 'Error updating items: ' . $e->getMessage());
+        }
+    }
+
+    #[On('estimate-assemblies-updated')]
+    public function handleAssembliesUpdate($data)
+    {
+        try {
+            $this->assemblies = collect($data['assemblies']);
+            $this->calculateTotals();
+        } catch (\Exception $e) {
+            \Log::error('Error in handleAssembliesUpdate:', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            session()->flash('error', 'Error updating assemblies: ' . $e->getMessage());
+        }
+    }
+
+    #[On('estimate-packages-updated')]
+    public function handlePackagesUpdate($data)
+    {
+        try {
+            // Refresh the estimate with all necessary relationships
+            $this->estimate = Estimate::with([
+                'items',
+                'assemblies.items',
+                'packages.assemblies.items'
+            ])->find($this->estimate->id);
+            
+            // Update the packages collection
+            $this->packages = collect($this->estimate->packages);
+            
+            // Recalculate totals with the fresh data
+            $this->calculateTotals();
+            
+            // Dispatch an event to notify other components
+            $this->dispatch('totals-updated', [
+                'totalCost' => $this->totalCost,
+                'totalCharge' => $this->totalCharge
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('Error in handlePackagesUpdate:', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            session()->flash('error', 'Error updating packages: ' . $e->getMessage());
+        }
+    }
+
     protected function rules()
     {
         return [
+            // Customer information validation rules
             'customer_name' => 'required|string|max:255',
             'customer_email' => 'nullable|email|max:255',
             'customer_phone' => 'nullable|string|max:20',
             'customer_address' => 'nullable|string',
-            'status' => 'required|in:draft,sent,approved,declined',
-            'markup_percentage' => 'numeric|min:0|max:100',
-            'discount_percentage' => 'numeric|min:0|max:100',
-            'notes' => 'nullable|string',
             'valid_until' => 'nullable|date',
             'items' => 'array',
             'assemblies' => 'array',
@@ -136,22 +244,16 @@ class EstimateForm extends Component
         
         if ($estimate) {
             if (is_numeric($estimate)) {
-                $estimate = Estimate::with(['items', 'assemblies.items', 'packages.assemblies.items'])->findOrFail($estimate);
+                $estimate = Estimate::with(['items', 'assemblies.items'])->findOrFail($estimate);
             }
             
             $this->estimate = $estimate;
             
-            // Load customer information
+            // Add back customer information initialization
             $this->customer_name = $estimate->customer_name;
             $this->customer_email = $estimate->customer_email;
             $this->customer_phone = $estimate->customer_phone;
             $this->customer_address = $estimate->customer_address;
-            
-            // Load estimate details
-            $this->status = $estimate->status;
-            $this->markup_percentage = $estimate->markup_percentage;
-            $this->discount_percentage = $estimate->discount_percentage;
-            $this->notes = $estimate->notes;
             $this->valid_until = $estimate->valid_until ? $estimate->valid_until->format('Y-m-d') : '';
             
             // Load items and ensure it's a collection
@@ -161,6 +263,9 @@ class EstimateForm extends Component
             $this->assemblies = collect($estimate->assemblies->map(function ($assembly) {
                 $assembly->items = collect($assembly->items->map(function ($item) {
                     return new EstimateItem([
+                        'id' => $item->id,
+                        'tenant_id' => $item->tenant_id,
+                        'estimate_assembly_id' => $item->estimate_assembly_id,
                         'item_id' => $item->item_id,
                         'original_item_id' => $item->original_item_id,
                         'name' => $item->name,
@@ -223,7 +328,7 @@ class EstimateForm extends Component
                 'labor_rate_id' => $laborRate->id,
                 'markup_percentage' => 0,
                 'discount_percentage' => 0,
-                'estimate_number' => Estimate::max('estimate_number') + 1
+                'estimate_number' => Estimate::getNextEstimateNumber($userData->current_tenant_id)
             ]);
             
             try {
@@ -256,13 +361,29 @@ class EstimateForm extends Component
         $packageCost = 0;
         $packageCharge = 0;
         
+        // Get the primary labor rate
+        $primaryLaborRate = LaborRate::where('is_primary', true)
+            ->where('tenant_id', auth()->user()->current_tenant_id)
+            ->active()
+            ->first();
+            
+        if (!$primaryLaborRate) {
+            throw new \RuntimeException('No primary labor rate found');
+        }
+        
         foreach ($package->assemblies as $assembly) {
             $assemblyItemsCost = 0;
             $assemblyItemsCharge = 0;
             
             foreach ($assembly->items as $item) {
+                // Calculate material costs
                 $assemblyItemsCost += $item->quantity * ($item->material_cost_rate ?? 0);
                 $assemblyItemsCharge += $item->quantity * ($item->material_charge_rate ?? 0);
+                
+                // Calculate labor costs (convert minutes to hours)
+                $laborHours = ($item->labor_units * $item->quantity) / 60;
+                $assemblyItemsCost += $laborHours * $primaryLaborRate->cost_rate;
+                $assemblyItemsCharge += $laborHours * $primaryLaborRate->charge_rate;
             }
             
             $packageCost += $assemblyItemsCost * $assembly->quantity;
@@ -281,13 +402,39 @@ class EstimateForm extends Component
 
     public function calculateTotals()
     {
+        // Add logging at the start of calculation
+        Log::info('Starting calculateTotals:', [
+            'estimate_id' => $this->estimate->id,
+            'markup_percentage' => $this->estimate->markup_percentage ?? 'not set',
+            'discount_percentage' => $this->estimate->discount_percentage ?? 'not set'
+        ]);
+
+        // Get the primary labor rate
+        $primaryLaborRate = LaborRate::where('is_primary', true)
+            ->where('tenant_id', auth()->user()->current_tenant_id)
+            ->active()
+            ->first();
+            
+        if (!$primaryLaborRate) {
+            throw new \RuntimeException('No primary labor rate found');
+        }
+
         // Calculate items cost and charge
         $itemsCost = 0;
         $itemsCharge = 0;
         
         foreach ($this->items as $item) {
+            // Material costs
             $itemsCost += $item->quantity * $item->material_cost_rate;
             $itemsCharge += $item->quantity * $item->material_charge_rate;
+            
+            // Labor costs (convert minutes to hours)
+            $laborHours = ($item->labor_units * $item->quantity) / 60;
+            
+            // Use item's labor rate if set, otherwise use primary labor rate
+            $laborRate = $item->laborRate ?? $primaryLaborRate;
+            $itemsCost += $laborHours * $laborRate->cost_rate;
+            $itemsCharge += $laborHours * $laborRate->charge_rate;
         }
         
         // Calculate assemblies cost and charge
@@ -299,8 +446,17 @@ class EstimateForm extends Component
             $assemblyItemsCharge = 0;
             
             foreach ($assembly->items as $item) {
+                // Material costs
                 $assemblyItemsCost += $item->quantity * $item->material_cost_rate;
                 $assemblyItemsCharge += $item->quantity * $item->material_charge_rate;
+                
+                // Labor costs (convert minutes to hours)
+                $laborHours = ($item->labor_units * $item->quantity) / 60;
+                
+                // Use item's labor rate if set, otherwise use primary labor rate
+                $laborRate = $item->laborRate ?? $primaryLaborRate;
+                $assemblyItemsCost += $laborHours * $laborRate->cost_rate;
+                $assemblyItemsCharge += $laborHours * $laborRate->charge_rate;
             }
             
             $assembliesCost += $assemblyItemsCost * $assembly->quantity;
@@ -311,32 +467,78 @@ class EstimateForm extends Component
         $packagesCost = 0;
         $packagesCharge = 0;
         
-        foreach ($this->packages as $package) {
-            $packageTotal = $this->calculatePackageTotal($package);
-            $packagesCost += $packageTotal['cost'];
-            $packagesCharge += $packageTotal['charge'];
+        if ($this->estimate) {
+            $packages = $this->estimate->packages()->with(['assemblies.items'])->get();
+            foreach ($packages as $package) {
+                $totals = $this->calculatePackageTotal($package);
+                $packagesCost += $totals['cost'];
+                $packagesCharge += $totals['charge'];
+            }
         }
         
         // Calculate subtotals
         $this->subtotalCost = $itemsCost + $assembliesCost + $packagesCost;
         $this->subtotalCharge = $itemsCharge + $assembliesCharge + $packagesCharge;
         
+        // Log subtotals before markup/discount
+        Log::info('Subtotals calculated:', [
+            'subtotalCost' => $this->subtotalCost,
+            'subtotalCharge' => $this->subtotalCharge
+        ]);
+        
         // Apply markup
         $this->markupAmount = 0;
-        if ($this->markup_percentage > 0) {
-            $this->markupAmount = $this->subtotalCharge * $this->markup_percentage / 100;
+        if ($this->estimate && $this->estimate->markup_percentage > 0) {
+            $this->markupAmount = $this->subtotalCharge * ($this->estimate->markup_percentage / 100);
+            
+            // Log markup calculation
+            Log::info('Markup applied:', [
+                'markup_percentage' => $this->estimate->markup_percentage,
+                'markupAmount' => $this->markupAmount
+            ]);
         }
         
         // Apply discount
         $this->discountAmount = 0;
         $chargeAfterMarkup = $this->subtotalCharge + $this->markupAmount;
-        if ($this->discount_percentage > 0) {
-            $this->discountAmount = $chargeAfterMarkup * $this->discount_percentage / 100;
+        if ($this->estimate && $this->estimate->discount_percentage > 0) {
+            $this->discountAmount = $chargeAfterMarkup * ($this->estimate->discount_percentage / 100);
+            
+            // Log discount calculation
+            Log::info('Discount applied:', [
+                'discount_percentage' => $this->estimate->discount_percentage,
+                'discountAmount' => $this->discountAmount
+            ]);
         }
         
         // Calculate totals
         $this->totalCost = $this->subtotalCost;
         $this->totalCharge = $chargeAfterMarkup - $this->discountAmount;
+        
+        // Log final totals
+        Log::info('Final totals:', [
+            'totalCost' => $this->totalCost,
+            'totalCharge' => $this->totalCharge
+        ]);
+
+        // Update the database with new totals
+        if ($this->estimate) {
+            try {
+                DB::transaction(function () {
+                    $this->estimate->update([
+                        'total_cost' => $this->totalCost,
+                        'total_charge' => $this->totalCharge
+                    ]);
+                });
+            } catch (\Exception $e) {
+                Log::error('Error updating estimate totals:', [
+                    'error' => $e->getMessage(),
+                    'trace' => $e->getTraceAsString(),
+                    'estimate_id' => $this->estimate->id
+                ]);
+                session()->flash('warning', 'Warning: Unable to update estimate totals in database.');
+            }
+        }
     }
     
     public function addItem()
@@ -352,6 +554,19 @@ class EstimateForm extends Component
         }
         
         try {
+            Log::info('addItem - Starting with state:', [
+                'current_items_count' => $this->items instanceof \Illuminate\Support\Collection ? $this->items->count() : 'not a collection',
+                'current_items' => $this->items instanceof \Illuminate\Support\Collection ? $this->items->map(function($item) {
+                    return [
+                        'id' => $item->id,
+                        'name' => $item->name,
+                        'estimate_id' => $item->estimate_id
+                    ];
+                })->toArray() : 'not a collection',
+                'selected_item_id' => $this->selectedItem,
+                'quantity' => $this->itemQuantity
+            ]);
+            
             $item = Item::findOrFail($this->selectedItem);
             
             // Get default labor rate
@@ -365,13 +580,14 @@ class EstimateForm extends Component
                     ->first();
             }
             
-            $laborRateId = $laborRate ? $laborRate->id : null;
+            if (!$laborRate) {
+                throw new \Exception('No labor rate found. Please create at least one labor rate.');
+            }
             
-            \Log::Info('items before adding item', $this->items->toArray());
-            // Create a new EstimateItem model instance
+            // Create a new EstimateItem model instance with explicit estimate_id
             $estimateItem = new EstimateItem([
                 'tenant_id' => auth()->user()->current_tenant_id,
-                'estimate_id' => $this->estimate->id,  // Always set estimate_id since we always have one
+                'estimate_id' => $this->estimate->id,
                 'item_id' => $item->id,
                 'original_item_id' => $item->id,
                 'name' => $item->name,
@@ -381,28 +597,54 @@ class EstimateForm extends Component
                 'material_cost_rate' => $item->material_cost_rate,
                 'material_charge_rate' => $item->material_charge_rate,
                 'labor_units' => $item->labor_units,
-                'labor_rate_id' => $laborRateId,
+                'labor_rate_id' => $laborRate->id,
                 'original_cost_rate' => $item->material_cost_rate,
                 'original_charge_rate' => $item->material_charge_rate,
             ]);
 
-            // Always save since we always have an estimate
+            Log::info('addItem - Before saving new item:', [
+                'new_item' => [
+                    'estimate_id' => $estimateItem->estimate_id,
+                    'name' => $estimateItem->name,
+                    'quantity' => $estimateItem->quantity
+                ]
+            ]);
+
+            // Save the new item
             $estimateItem->save();
             
-            // Ensure items is a collection
-            if (!($this->items instanceof \Illuminate\Support\Collection)) {
-                $this->items = collect($this->items);
-            }
+            Log::info('addItem - After saving new item:', [
+                'saved_item' => [
+                    'id' => $estimateItem->id,
+                    'estimate_id' => $estimateItem->estimate_id,
+                    'name' => $estimateItem->name
+                ]
+            ]);
             
-            $this->items->push($estimateItem);
+            // Always ensure we have a fresh collection
+            $this->items = collect($this->estimate->items()->get());
+            
+            Log::info('addItem - After refreshing collection:', [
+                'items_count' => $this->items->count(),
+                'items' => $this->items->map(function($item) {
+                    return [
+                        'id' => $item->id,
+                        'name' => $item->name,
+                        'estimate_id' => $item->estimate_id,
+                        'quantity' => $item->quantity
+                    ];
+                })->toArray()
+            ]);
             
             $this->selectedItem = '';
             $this->itemQuantity = 1;
             
             $this->calculateTotals();
+            
         } catch (\Exception $e) {
             Log::error('Error adding item to estimate', [
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
             ]);
             session()->flash('error', 'Error adding item: ' . $e->getMessage());
         }
@@ -440,16 +682,27 @@ class EstimateForm extends Component
     
     public function removeItem($index)
     {
-        // Ensure items is a collection
-        if (!($this->items instanceof \Illuminate\Support\Collection)) {
-            $this->items = collect($this->items);
+        try {
+            // Get the item before removing it from the collection
+            $item = $this->items->get($index);
+            
+            // If it's a database record, delete it
+            if ($item instanceof EstimateItem && $item->id) {
+                $item->delete();
+            }
+            
+            // Remove from the collection and re-index
+            $this->items = $this->items->forget($index)->values();
+            
+            $this->calculateTotals();
+        } catch (\Exception $e) {
+            Log::error('Error removing item', [
+                'error' => $e->getMessage(),
+                'index' => $index,
+                'items' => $this->items->toArray()
+            ]);
+            session()->flash('error', 'Error removing item: ' . $e->getMessage());
         }
-        
-        // Remove the item and re-index the collection
-        // Note: We need to reassign because collections are immutable
-        $this->items = $this->items->forget($index)->values();
-        
-        $this->calculateTotals();
     }
     
     public function addAssembly()
@@ -631,30 +884,89 @@ class EstimateForm extends Component
     
     public function updateAssemblyItem()
     {
-        if ($this->editingAssemblyItemData['quantity'] <= 0) {
-            session()->flash('error', 'Quantity must be greater than zero.');
-            return;
+        Log::info('updateAssemblyItem called - INITIAL CHECK');
+        
+        try {
+            // First, log the raw data we're working with
+            Log::info('Raw editing data:', [
+                'editingAssemblyItemData' => $this->editingAssemblyItemData,
+                'assemblies' => $this->assemblies instanceof \Illuminate\Support\Collection ? 'Collection' : gettype($this->assemblies),
+                'assemblies_count' => $this->assemblies instanceof \Illuminate\Support\Collection ? $this->assemblies->count() : 'not a collection'
+            ]);
+
+            if (!is_array($this->editingAssemblyItemData)) {
+                throw new \Exception('editingAssemblyItemData is not an array');
+            }
+
+            if (!isset($this->editingAssemblyItemData['assembly_index']) || 
+                !isset($this->editingAssemblyItemData['item_index']) || 
+                !isset($this->editingAssemblyItemData['quantity'])) {
+                throw new \Exception('Missing required data in editingAssemblyItemData');
+            }
+
+            if (!is_numeric($this->editingAssemblyItemData['quantity']) || $this->editingAssemblyItemData['quantity'] <= 0) {
+                throw new \Exception('Quantity must be greater than zero.');
+            }
+
+            // Get the assembly
+            if (!isset($this->assemblies[$this->editingAssemblyItemData['assembly_index']])) {
+                throw new \Exception('Assembly not found at index ' . $this->editingAssemblyItemData['assembly_index']);
+            }
+            $assembly = $this->assemblies[$this->editingAssemblyItemData['assembly_index']];
+            
+            Log::info('Found assembly:', [
+                'assembly_id' => $assembly->id,
+                'items_count' => $assembly->items instanceof \Illuminate\Support\Collection ? $assembly->items->count() : 'not a collection'
+            ]);
+
+            // Get the item
+            if (!isset($assembly->items[$this->editingAssemblyItemData['item_index']])) {
+                throw new \Exception('Item not found at index ' . $this->editingAssemblyItemData['item_index']);
+            }
+            $item = $assembly->items[$this->editingAssemblyItemData['item_index']];
+
+            Log::info('Found item to update:', [
+                'item_id' => $item->id,
+                'old_quantity' => $item->quantity,
+                'new_quantity' => $this->editingAssemblyItemData['quantity']
+            ]);
+
+            // Update the quantity
+            $item->quantity = $this->editingAssemblyItemData['quantity'];
+            $saved = $item->save();
+
+            Log::info('Save result:', ['saved' => $saved]);
+
+            // Reset the editing state
+            $this->editingAssemblyItemData = [
+                'assembly_index' => null,
+                'item_index' => null,
+                'quantity' => null
+            ];
+
+            // Refresh the assemblies collection
+            if ($this->estimate) {
+                $this->assemblies = $this->estimate->assemblies()->with('items')->get();
+                Log::info('Refreshed assemblies:', [
+                    'assemblies_count' => $this->assemblies->count()
+                ]);
+            }
+
+            // Recalculate totals
+            $this->calculateTotals();
+
+            // Dispatch events to notify of updates
+            $this->dispatch('assembly-item-updated');
+            $this->dispatch('estimate-assemblies-updated', ['assemblies' => $this->assemblies]);
+
+        } catch (\Exception $e) {
+            Log::error('Error in updateAssemblyItem:', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+                'editing_data' => $this->editingAssemblyItemData
+            ]);
+            session()->flash('error', 'Error updating item quantity: ' . $e->getMessage());
         }
-        
-        $assemblyIndex = $this->editingAssemblyItemData['assembly_index'];
-        $itemIndex = $this->editingAssemblyItemData['item_index'];
-        
-        // Get the assembly and item using collection methods
-        $assembly = $this->assemblies->get($assemblyIndex);
-        if (!($assembly->items instanceof \Illuminate\Support\Collection)) {
-            $assembly->items = collect($assembly->items);
-        }
-        $item = $assembly->items->get($itemIndex);
-        $item->quantity = $this->editingAssemblyItemData['quantity'];
-        $item->save(); // Save to database
-        
-        $this->editingAssemblyItemData = [
-            'assembly_index' => null,
-            'item_index' => null,
-            'quantity' => null
-        ];
-        
-        $this->calculateTotals();
     }
     
     public function cancelEditAssemblyItem()
@@ -673,38 +985,43 @@ class EstimateForm extends Component
         try {
             DB::beginTransaction();
             
-            $estimateData = [
-                'customer_name' => $this->customer_name,
-                'customer_email' => $this->customer_email,
-                'customer_phone' => $this->customer_phone,
-                'customer_address' => $this->customer_address,
-                'status' => $this->status,
-                'markup_percentage' => $this->markup_percentage,
-                'discount_percentage' => $this->discount_percentage,
-                'notes' => $this->notes,
-                'valid_until' => $this->valid_until ?: null,
-                'is_temporary' => false  // Always set to false when saving
-            ];
+            if (!$this->estimate) {
+                $this->estimate = new Estimate();
+            }
             
-            // Update the estimate
-            $this->estimate->update($estimateData);
+            // Save customer information
+            $this->estimate->customer_name = $this->customer_name;
+            $this->estimate->customer_email = $this->customer_email;
+            $this->estimate->customer_phone = $this->customer_phone;
+            $this->estimate->customer_address = $this->customer_address;
+            $this->estimate->valid_until = $this->valid_until;
             
-            // Create a new version snapshot
-            $this->estimate->createVersionSnapshot();
+            // Save totals
+            $this->estimate->total_cost = $this->totalCost;
+            $this->estimate->total_charge = $this->totalCharge;
+            
+            // Set tenant and user
+            if (!$this->estimate->tenant_id) {
+                $this->estimate->tenant_id = auth()->user()->current_tenant_id;
+            }
+            if (!$this->estimate->user_id) {
+                $this->estimate->user_id = auth()->id();
+            }
+            
+            $this->estimate->save();
             
             DB::commit();
             
             session()->flash('message', 'Estimate saved successfully.');
             
-            return redirect()->route('estimates.index');
+            return redirect()->route('estimates.view', $this->estimate);
+            
         } catch (\Exception $e) {
             DB::rollBack();
-            
-            Log::error('Error saving estimate', [
+            Log::error('Error saving estimate:', [
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
             ]);
-            
             session()->flash('error', 'Error saving estimate: ' . $e->getMessage());
         }
     }
@@ -834,24 +1151,27 @@ class EstimateForm extends Component
                 // Add items from the assembly
                 foreach ($assembly->items as $item) {
                     // Get primary labor rate from settings
-                    $laborRate = Settings::getPrimaryLaborRate();
-                    
-                    if (!$laborRate || !is_object($laborRate)) {
-                        // Get default labor rate
-                        $laborRate = LaborRate::where('tenant_id', auth()->user()->current_tenant_id)
-                            ->where('is_default', true)
-                            ->first();
-                            
-                        if (!$laborRate) {
-                            // Fallback to any labor rate if no default is set
-                            $laborRate = LaborRate::where('tenant_id', auth()->user()->current_tenant_id)
-                                ->first();
-                        }
+                    $laborRate = LaborRate::where('is_primary', true)
+                        ->where('tenant_id', auth()->user()->current_tenant_id)
+                        ->active()
+                        ->first();
                         
-                        if (!$laborRate) {
-                            throw new \Exception('No labor rate found. Please create at least one labor rate.');
+                        if (!$laborRate || !is_object($laborRate)) {
+                            // Get default labor rate
+                            $laborRate = LaborRate::where('tenant_id', auth()->user()->current_tenant_id)
+                                ->where('is_default', true)
+                                ->first();
+                                
+                            if (!$laborRate) {
+                                // Fallback to any labor rate if no default is set
+                                $laborRate = LaborRate::where('tenant_id', auth()->user()->current_tenant_id)
+                                    ->first();
+                            }
+                            
+                            if (!$laborRate) {
+                                throw new \Exception('No labor rate found. Please create at least one labor rate.');
+                            }
                         }
-                    }
 
                     // Create the estimate item
                     EstimateItem::create([
@@ -1157,7 +1477,7 @@ class EstimateForm extends Component
                 ]);
             }
 
-            // Refresh the estimate to get the updated data
+            // Refresh the estimate
             $this->estimate = Estimate::with([
                 'packages',
                 'packages.assemblies',
@@ -1198,5 +1518,26 @@ class EstimateForm extends Component
         $this->addingAssemblyToPackageIndex = null;
         $this->selectedPackageAssembly = null;
         $this->packageAssemblyQuantity = 1;
+    }
+
+    public function calculateLaborCosts($laborUnits)
+    {
+        // Get the primary labor rate
+        $primaryLaborRate = LaborRate::where('is_primary', true)
+            ->where('tenant_id', auth()->user()->current_tenant_id)
+            ->active()
+            ->first();
+            
+        if (!$primaryLaborRate) {
+            throw new \RuntimeException('No primary labor rate found');
+        }
+        
+        // Convert labor units (minutes) to hours
+        $laborHours = $laborUnits / 60;
+        
+        return [
+            'cost' => $laborHours * $primaryLaborRate->cost_rate,
+            'charge' => $laborHours * $primaryLaborRate->charge_rate
+        ];
     }
 } 

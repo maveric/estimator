@@ -81,9 +81,15 @@ class Assembly extends Model
         $totalMaterialCharge = 0;
         $totalLaborCharge = 0;
 
-        // Get the primary labor rate from settings
-        $primaryLaborRate = Settings::getPrimaryLaborRate();
-        $defaultLaborMarkup = Settings::getDefaultLaborMarkup();
+        // Get the primary labor rate
+        $primaryLaborRate = LaborRate::where('is_primary', true)
+            ->where('tenant_id', $this->tenant_id)
+            ->active()
+            ->first();
+
+        if (!$primaryLaborRate) {
+            throw new \RuntimeException('No primary labor rate found');
+        }
 
         foreach ($this->items as $item) {
             $quantity = $item->pivot->quantity;
@@ -96,8 +102,8 @@ class Assembly extends Model
             $laborUnits = $item->labor_units * $quantity;
             $laborHours = $laborUnits / 60;
             
-            $laborCost = $laborHours * $primaryLaborRate;
-            $laborCharge = $laborCost * $defaultLaborMarkup;
+            $laborCost = $laborHours * $primaryLaborRate->cost_rate;
+            $laborCharge = $laborHours * $primaryLaborRate->charge_rate;
             
             $totalMaterialCost += $materialCost;
             $totalLaborCost += $laborCost;

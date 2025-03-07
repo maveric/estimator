@@ -54,21 +54,35 @@ class Estimate extends Model
     public static function getNextEstimateNumber($tenantId)
     {
         return DB::transaction(function () use ($tenantId) {
+            // First try to create the sequence if it doesn't exist
+            try {
+                DB::table('tenant_estimate_sequences')->insertOrIgnore([
+                    'tenant_id' => $tenantId,
+                    'last_estimate_number' => 0
+                ]);
+            } catch (\Exception $e) {
+                // Ignore any errors, as the sequence might have been created by another process
+            }
+
+            // Now get the sequence with a lock
             $sequence = DB::table('tenant_estimate_sequences')
                 ->where('tenant_id', $tenantId)
                 ->lockForUpdate()
                 ->first();
 
             if (!$sequence) {
-                DB::table('tenant_estimate_sequences')->insert([
-                    'tenant_id' => $tenantId,
-                    'last_estimate_number' => 0
-                ]);
-                $sequence = (object)['last_estimate_number' => 0];
+                throw new \RuntimeException('Failed to create or retrieve estimate sequence');
             }
 
-            $nextNumber = $sequence->last_estimate_number + 1;
-            
+            // Get the current max estimate number including soft deleted records
+            $maxNumber = static::withTrashed()
+                ->where('tenant_id', $tenantId)
+                ->max('estimate_number');
+
+            // Use the higher number between the sequence and actual max number
+            $nextNumber = max(($maxNumber ?? 0), $sequence->last_estimate_number) + 1;
+
+            // Update the sequence
             DB::table('tenant_estimate_sequences')
                 ->where('tenant_id', $tenantId)
                 ->update(['last_estimate_number' => $nextNumber]);

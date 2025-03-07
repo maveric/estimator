@@ -4,7 +4,7 @@ namespace App\Livewire\Items;
 
 use App\Models\Item;
 use App\Models\Category;
-use App\Models\Settings;
+use App\Models\LaborRate;
 use Livewire\Component;
 use Livewire\Attributes\Layout;
 use Illuminate\Support\Facades\Log;
@@ -45,7 +45,16 @@ class ItemForm extends Component
     
     public function mount($item = null)
     {
-        $this->loadSettings();
+        // Get the primary labor rate
+        $this->primaryLaborRate = LaborRate::where('is_primary', true)
+            ->where('tenant_id', auth()->user()->current_tenant_id)
+            ->active()
+            ->first();
+            
+        if (!$this->primaryLaborRate) {
+            throw new \RuntimeException('No primary labor rate found');
+        }
+        
         if ($item) {
             // Check if $item is an ID (string or number) and fetch the model if needed
             if (!is_object($item)) {
@@ -85,7 +94,6 @@ class ItemForm extends Component
     
     public function loadSettings()
     {
-        $this->primaryLaborRate = Settings::getPrimaryLaborRate();
         $this->defaultLaborMarkup = Settings::getDefaultLaborMarkup();
     }
     

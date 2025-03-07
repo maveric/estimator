@@ -67,7 +67,7 @@ class EstimatePackage extends Model
     }
 
     /**
-     * Calculate the total cost of the package.
+     * Calculate the total cost and charge of the package.
      */
     public function calculateCost(): array
     {
@@ -76,53 +76,48 @@ class EstimatePackage extends Model
         $totalMaterialCharge = 0;
         $totalLaborCharge = 0;
 
-        foreach ($this->assemblies as $assembly) {
-            $totalMaterialCost += $assembly->total_material_cost;
-            $totalLaborCost += $assembly->total_labor_cost;
-            $totalMaterialCharge += $assembly->total_material_charge;
-            $totalLaborCharge += $assembly->total_labor_charge;
+        // Get the primary labor rate
+        $primaryLaborRate = LaborRate::where('is_primary', true)
+            ->where('tenant_id', $this->tenant_id)
+            ->active()
+            ->first();
+            
+        if (!$primaryLaborRate) {
+            throw new \RuntimeException('No primary labor rate found');
         }
 
+        foreach ($this->assemblies as $assembly) {
+            foreach ($assembly->items as $item) {
+                // Calculate material costs
+                $materialCost = $item->material_cost_rate * $item->quantity;
+                $materialCharge = $item->material_charge_rate * $item->quantity;
+                
+                // Calculate labor costs (convert minutes to hours)
+                $laborHours = ($item->labor_units * $item->quantity) / 60;
+                
+                // Use item's labor rate if set, otherwise use primary labor rate
+                $laborRate = $item->laborRate ?? $primaryLaborRate;
+                $laborCost = $laborHours * $laborRate->cost_rate;
+                $laborCharge = $laborHours * $laborRate->charge_rate;
+                
+                // Multiply by assembly quantity
+                $totalMaterialCost += $materialCost * $assembly->quantity;
+                $totalLaborCost += $laborCost * $assembly->quantity;
+                $totalMaterialCharge += $materialCharge * $assembly->quantity;
+                $totalLaborCharge += $laborCharge * $assembly->quantity;
+            }
+        }
+
+        // Multiply by package quantity
+        $totalMaterialCost *= $this->quantity;
+        $totalLaborCost *= $this->quantity;
+        $totalMaterialCharge *= $this->quantity;
+        $totalLaborCharge *= $this->quantity;
+
         return [
-            'material_cost' => $totalMaterialCost,
-            'labor_cost' => $totalLaborCost,
-            'material_charge' => $totalMaterialCharge,
-            'labor_charge' => $totalLaborCharge,
             'total_cost' => $totalMaterialCost + $totalLaborCost,
-            'total_charge' => $totalMaterialCharge + $totalLaborCharge,
+            'total_charge' => $totalMaterialCharge + $totalLaborCharge
         ];
-    }
-
-    /**
-     * Get the total material cost.
-     */
-    public function getTotalMaterialCostAttribute()
-    {
-        return $this->assemblies->sum('total_material_cost') * $this->quantity;
-    }
-
-    /**
-     * Get the total material charge.
-     */
-    public function getTotalMaterialChargeAttribute()
-    {
-        return $this->assemblies->sum('total_material_charge') * $this->quantity;
-    }
-
-    /**
-     * Get the total labor cost.
-     */
-    public function getTotalLaborCostAttribute()
-    {
-        return $this->assemblies->sum('total_labor_cost') * $this->quantity;
-    }
-
-    /**
-     * Get the total labor charge.
-     */
-    public function getTotalLaborChargeAttribute()
-    {
-        return $this->assemblies->sum('total_labor_charge') * $this->quantity;
     }
 
     /**
@@ -130,7 +125,8 @@ class EstimatePackage extends Model
      */
     public function getTotalCostAttribute()
     {
-        return $this->total_material_cost + $this->total_labor_cost;
+        $costs = $this->calculateCost();
+        return $costs['total_cost'];
     }
 
     /**
@@ -138,6 +134,7 @@ class EstimatePackage extends Model
      */
     public function getTotalChargeAttribute()
     {
-        return $this->total_material_charge + $this->total_labor_charge;
+        $costs = $this->calculateCost();
+        return $costs['total_charge'];
     }
 }
