@@ -97,7 +97,11 @@
                     
                     <div>
                         <label for="quantity" class="block text-sm font-medium text-gray-700">Quantity</label>
-                        <input type="number" wire:model="quantity" id="quantity" step="0.01" min="0.01" max="999.99"
+                        <input type="number" wire:model="quantity" id="quantity" 
+                            step="1" 
+                            min="0.01" 
+                            max="999.99"
+                            inputmode="decimal"
                             class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
                     </div>
                     
@@ -132,7 +136,10 @@
                                         @if ($editingAssemblyIndex === $index)
                                             <input type="number" 
                                                 wire:model="editingAssemblyQuantity" 
-                                                step="0.01" min="0.01" max="999.99"
+                                                step="1" 
+                                                min="0.01" 
+                                                max="999.99"
+                                                inputmode="decimal"
                                                 class="block w-24 border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
                                             @error("packageAssemblies.{$index}.quantity") 
                                                 <span class="text-red-500 text-xs">{{ $message }}</span> 

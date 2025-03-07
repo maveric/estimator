@@ -105,7 +105,6 @@ class EstimateItem extends Model
      */
     public function getTotalMaterialCostAttribute()
     {
-        $assemblyQuantity = $this->estimateAssembly ? $this->estimateAssembly->quantity : 1;
         return $this->material_cost_rate * $this->quantity;
     }
 
@@ -114,7 +113,6 @@ class EstimateItem extends Model
      */
     public function getTotalMaterialChargeAttribute()
     {
-        $assemblyQuantity = $this->estimateAssembly ? $this->estimateAssembly->quantity : 1;
         return $this->material_charge_rate * $this->quantity;
     }
 
@@ -123,7 +121,6 @@ class EstimateItem extends Model
      */
     public function getTotalLaborUnitsAttribute()
     {
-        $assemblyQuantity = $this->estimateAssembly ? $this->estimateAssembly->quantity : 1;
         return $this->labor_units * $this->quantity;
     }
 
@@ -133,9 +130,8 @@ class EstimateItem extends Model
     public function getTotalLaborCostAttribute()
     {
         if (!$this->laborRate) return 0;
-        $assemblyQuantity = $this->estimateAssembly ? $this->estimateAssembly->quantity : 1;
         // Convert minutes to hours for hourly rate calculation
-        return ($this->labor_units * $this->quantity / 60) * $this->laborRate->cost_rate * $assemblyQuantity;
+        return ($this->labor_units * $this->quantity / 60) * $this->laborRate->cost_rate;
     }
 
     /**
@@ -144,9 +140,8 @@ class EstimateItem extends Model
     public function getTotalLaborChargeAttribute()
     {
         if (!$this->laborRate) return 0;
-        $assemblyQuantity = $this->estimateAssembly ? $this->estimateAssembly->quantity : 1;
         // Convert minutes to hours for hourly rate calculation
-        return ($this->labor_units * $this->quantity / 60) * $this->laborRate->charge_rate * $assemblyQuantity;
+        return ($this->labor_units * $this->quantity / 60) * $this->laborRate->charge_rate;
     }
 
     /**

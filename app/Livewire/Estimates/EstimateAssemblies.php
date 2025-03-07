@@ -7,6 +7,7 @@ use App\Models\Assembly;
 use App\Models\EstimateAssembly;
 use App\Models\EstimateItem;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Log;
 
 class EstimateAssemblies extends Component
 {
@@ -36,12 +37,16 @@ class EstimateAssemblies extends Component
     // Collapse state tracking
     public $collapsedAssemblies = [];
 
-    public function mount($estimate = null)
+    protected $listeners = [
+        'assembly-updated' => 'handleAssemblyUpdate'
+    ];
+
+    public function mount($estimate = null, $assemblies = null)
     {
-        $this->assemblies = collect();
+        $this->estimate = $estimate;
+        $this->assemblies = $assemblies ?? collect();
         
         if ($estimate) {
-            $this->estimate = $estimate;
             $this->assemblies = collect($estimate->assemblies->map(function ($assembly) {
                 $assembly->items = collect($assembly->items->map(function ($item) {
                     return new EstimateItem([
@@ -71,85 +76,68 @@ class EstimateAssemblies extends Component
 
     public function addAssembly()
     {
-        if (!$this->selectedAssembly || $this->assemblyQuantity <= 0) {
-            return;
-        }
+        try {
+            if (empty($this->selectedAssembly)) {
+                throw new \Exception('Please select an assembly to add.');
+            }
 
-        $assembly = Assembly::with('items')->find($this->selectedAssembly);
-        if (!$assembly) {
-            return;
-        }
+            $originalAssembly = Assembly::with(['items.laborRate'])->find($this->selectedAssembly);
+            
+            if (!$originalAssembly) {
+                throw new \Exception('Selected assembly not found.');
+            }
 
-        \Log::info('EstimateAssemblies - Creating new assembly:', [
-            'selected_assembly_id' => $this->selectedAssembly,
-            'quantity' => $this->assemblyQuantity,
-            'estimate_id' => $this->estimate ? $this->estimate->id : null
-        ]);
-
-        // Create and save the estimate assembly
-        $estimateAssembly = new EstimateAssembly([
-            'tenant_id' => auth()->user()->current_tenant_id,
-            'estimate_id' => $this->estimate->id,
-            'assembly_id' => $assembly->id,
-            'original_assembly_id' => $assembly->id,
-            'name' => $assembly->name,
-            'description' => $assembly->description,
-            'quantity' => $this->assemblyQuantity,
-        ]);
-
-        $estimateAssembly->save();
-
-        \Log::info('EstimateAssemblies - Created and saved assembly:', [
-            'assembly_data' => [
-                'id' => $estimateAssembly->id,
-                'estimate_id' => $estimateAssembly->estimate_id,
-                'name' => $estimateAssembly->name
-            ]
-        ]);
-
-        // Create and save items for this assembly
-        foreach ($assembly->items as $item) {
-            $estimateItem = new EstimateItem([
+            // Create a new estimate assembly
+            $estimateAssembly = new EstimateAssembly([
                 'tenant_id' => auth()->user()->current_tenant_id,
-                'estimate_assembly_id' => $estimateAssembly->id,
-                'item_id' => $item->id,
-                'original_item_id' => $item->id,
-                'name' => $item->name,
-                'description' => $item->description,
-                'unit_of_measure' => $item->unit_of_measure,
-                'quantity' => $item->pivot->quantity,
-                'material_cost_rate' => $item->material_cost_rate,
-                'material_charge_rate' => $item->material_charge_rate,
-                'labor_units' => $item->labor_units,
-                'labor_rate_id' => $item->labor_rate_id,
-                'original_cost_rate' => $item->material_cost_rate,
-                'original_charge_rate' => $item->material_charge_rate,
+                'estimate_id' => $this->estimate->id,
+                'original_assembly_id' => $originalAssembly->id,
+                'name' => $originalAssembly->name,
+                'description' => $originalAssembly->description,
+                'quantity' => $this->assemblyQuantity,
             ]);
 
-            $estimateItem->save();
+            $estimateAssembly->save();
+
+            // Clone items for this assembly
+            foreach ($originalAssembly->items as $item) {
+                $estimateItem = new EstimateItem([
+                    'tenant_id' => auth()->user()->current_tenant_id,
+                    'estimate_assembly_id' => $estimateAssembly->id,
+                    'item_id' => $item->id,
+                    'original_item_id' => $item->id,
+                    'name' => $item->name,
+                    'description' => $item->description,
+                    'unit_of_measure' => $item->unit_of_measure,
+                    'quantity' => $item->pivot->quantity ?? 1,
+                    'material_cost_rate' => $item->material_cost_rate,
+                    'material_charge_rate' => $item->material_charge_rate,
+                    'labor_units' => $item->labor_units,
+                    'labor_rate_id' => $item->labor_rate_id,
+                    'original_cost_rate' => $item->material_cost_rate,
+                    'original_charge_rate' => $item->material_charge_rate,
+                ]);
+                $estimateItem->save();
+            }
+
+            // Refresh assemblies collection
+            $this->estimate->refresh();
+            $this->assemblies = collect($this->estimate->assemblies);
+
+            // Reset form
+            $this->selectedAssembly = '';
+            $this->assemblyQuantity = 1;
+
+            $this->dispatch('estimate-updated');
+
+        } catch (\Exception $e) {
+            Log::error('Error adding assembly:', [
+                'error' => $e->getMessage(),
+                'estimate_id' => $this->estimate->id,
+                'assembly_id' => $this->selectedAssembly
+            ]);
+            session()->flash('error', 'Error adding assembly: ' . $e->getMessage());
         }
-
-        // Refresh assemblies from database
-        $this->assemblies = collect($this->estimate->assemblies()->with('items')->get());
-        
-        \Log::info('EstimateAssemblies - After refreshing assemblies:', [
-            'assemblies_count' => $this->assemblies->count(),
-            'assemblies' => $this->assemblies->map(fn($assembly) => [
-                'id' => $assembly->id,
-                'estimate_id' => $assembly->estimate_id,
-                'name' => $assembly->name,
-                'items_count' => $assembly->items->count()
-            ])->toArray()
-        ]);
-
-        // Reset form
-        $this->selectedAssembly = '';
-        $this->assemblyQuantity = 1;
-        
-        // Add to collapsed state
-        $this->collapsedAssemblies[] = $this->assemblies->count() - 1;
-        
-        $this->emitAssembliesChanged();
     }
 
     public function editAssembly($index)
@@ -407,14 +395,28 @@ class EstimateAssemblies extends Component
         ]);
     }
 
+    public function handleAssemblyUpdate()
+    {
+        try {
+            $this->dispatch('estimate-updated');
+        } catch (\Exception $e) {
+            Log::error('Error handling assembly update:', [
+                'error' => $e->getMessage(),
+                'estimate_id' => $this->estimate->id
+            ]);
+        }
+    }
+
     public function render()
     {
-        $availableAssemblies = Assembly::orderBy('name')->get();
-        $availableItems = \App\Models\Item::orderBy('name')->get();
+        $availableAssemblies = Assembly::with(['items.laborRate'])
+            ->where('tenant_id', auth()->user()->current_tenant_id)
+            ->where('is_active', true)
+            ->orderBy('name')
+            ->get();
         
         return view('livewire.estimates.estimate-assemblies', [
-            'availableAssemblies' => $availableAssemblies,
-            'availableItems' => $availableItems
+            'availableAssemblies' => $availableAssemblies
         ]);
     }
 } 

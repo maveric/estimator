@@ -21,9 +21,9 @@
                 <input type="number" 
                        wire:model="itemQuantity" 
                        id="itemQuantity" 
-                       min="0.01" 
+                       min="1" 
                        step="1" 
-                       inputmode="decimal"
+                       value="1"
                        class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
             </div>
             
@@ -60,9 +60,9 @@
                                         <input type="number" 
                                                wire:model="editingItemQuantity" 
                                                class="w-20 border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-                                               min="0.01"
+                                               min="1"
                                                step="1"
-                                               inputmode="decimal">
+                                               value="1">
                                     @else
                                         {{ $item->quantity }}
                                     @endif
@@ -101,7 +101,7 @@
                                             </button>
                                             <button type="button" 
                                                     wire:click="removeItem({{ $index }})"
-                                                    wire:confirm="Are you sure you want to remove this item from the estimate? This action cannot be undone."
+                                                    wire:confirm="Are you sure you want to remove this item? This action cannot be undone."
                                                     class="ml-3 text-red-600 hover:text-red-900">
                                                 Remove
                                             </button>
@@ -114,7 +114,7 @@
                 </table>
             @else
                 <div class="text-center py-4 text-gray-500">
-                    No items added to this estimate yet.
+                    No items added yet.
                 </div>
             @endif
         </div>

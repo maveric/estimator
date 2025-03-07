@@ -38,17 +38,9 @@ class EstimateForm extends Component
     public $packages = [];
     public $laborRates = [];
     
-    // For adding new items
-    public $selectedItem = '';
-    public $itemQuantity = 1;
-    
     // For adding new assemblies
     public $selectedAssembly = '';
     public $assemblyQuantity = 1;
-    
-    // For editing items
-    public $editingItemIndex = null;
-    public $editingItemQuantity = null;
     
     // For editing assemblies
     public $editingAssemblyIndex = null;
@@ -173,6 +165,38 @@ class EstimateForm extends Component
         }
     }
 
+    #[On('assembly-items-updated')]
+    public function handleAssemblyItemsUpdate($data = [])
+    {
+        try {
+            // Refresh the estimate with all necessary relationships
+            $this->estimate = Estimate::with([
+                'items',
+                'assemblies.items',
+                'packages.assemblies.items'
+            ])->find($this->estimate->id);
+            
+            // Update the assemblies collection
+            $this->assemblies = collect($this->estimate->assemblies);
+            
+            // Recalculate totals with the fresh data
+            $this->calculateTotals();
+            
+            // Dispatch an event to notify other components
+            $this->dispatch('totals-updated', [
+                'totalCost' => $this->totalCost,
+                'totalCharge' => $this->totalCharge
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('Error in handleAssemblyItemsUpdate:', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+                'data' => $data
+            ]);
+            session()->flash('error', 'Error updating assembly items: ' . $e->getMessage());
+        }
+    }
+
     #[On('estimate-assemblies-updated')]
     public function handleAssembliesUpdate($data)
     {
@@ -219,6 +243,37 @@ class EstimateForm extends Component
         }
     }
 
+    #[On('estimate-assembly-updated')]
+    public function handleAssemblyUpdate($data)
+    {
+        try {
+            // Refresh the estimate with all necessary relationships
+            $this->estimate = Estimate::with([
+                'items',
+                'assemblies.items',
+                'packages.assemblies.items'
+            ])->find($this->estimate->id);
+            
+            // Update the assemblies collection
+            $this->assemblies = collect($this->estimate->assemblies);
+            
+            // Recalculate totals with the fresh data
+            $this->calculateTotals();
+            
+            // Dispatch an event to notify other components
+            $this->dispatch('totals-updated', [
+                'totalCost' => $this->totalCost,
+                'totalCharge' => $this->totalCharge
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('Error in handleAssemblyUpdate:', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            session()->flash('error', 'Error updating assembly: ' . $e->getMessage());
+        }
+    }
+
     protected function rules()
     {
         return [
@@ -244,7 +299,11 @@ class EstimateForm extends Component
         
         if ($estimate) {
             if (is_numeric($estimate)) {
-                $estimate = Estimate::with(['items', 'assemblies.items'])->findOrFail($estimate);
+                $estimate = Estimate::with([
+                    'items',
+                    'assemblies.items.laborRate',
+                    'packages.assemblies.items.laborRate'
+                ])->findOrFail($estimate);
             }
             
             $this->estimate = $estimate;
@@ -264,7 +323,7 @@ class EstimateForm extends Component
                 $assembly->items = collect($assembly->items->map(function ($item) {
                     return new EstimateItem([
                         'id' => $item->id,
-                        'tenant_id' => $item->tenant_id,
+                        'tenant_id' => auth()->user()->current_tenant_id,
                         'estimate_assembly_id' => $item->estimate_assembly_id,
                         'item_id' => $item->item_id,
                         'original_item_id' => $item->original_item_id,
@@ -283,7 +342,7 @@ class EstimateForm extends Component
                 return $assembly;
             }));
             
-            // Load packages and ensure it's a collection
+            // Load packages with their assemblies and items
             $this->packages = collect($estimate->packages);
 
             // Initialize all existing items as collapsed
@@ -300,15 +359,16 @@ class EstimateForm extends Component
         } else {
             // Create a new temporary estimate
             $userData = auth()->user();
+            $tenantId = $userData->current_tenant_id;
             
             // Get default labor rate
-            $laborRate = LaborRate::where('tenant_id', $userData->current_tenant_id)
+            $laborRate = LaborRate::where('tenant_id', $tenantId)
                 ->where('is_default', true)
                 ->first();
                 
             if (!$laborRate) {
                 // Fallback to any labor rate if no default is set
-                $laborRate = LaborRate::where('tenant_id', $userData->current_tenant_id)
+                $laborRate = LaborRate::where('tenant_id', $tenantId)
                     ->first();
             }
             
@@ -317,7 +377,7 @@ class EstimateForm extends Component
             }
             
             $this->estimate = new Estimate([
-                'tenant_id' => $userData->current_tenant_id,
+                'tenant_id' => $tenantId,
                 'user_id' => $userData->id,
                 'name' => 'New Estimate',
                 'description' => 'Temporary estimate',
@@ -328,16 +388,26 @@ class EstimateForm extends Component
                 'labor_rate_id' => $laborRate->id,
                 'markup_percentage' => 0,
                 'discount_percentage' => 0,
-                'estimate_number' => Estimate::getNextEstimateNumber($userData->current_tenant_id)
+                'estimate_number' => Estimate::getNextEstimateNumber($tenantId)
             ]);
             
             try {
-                $this->estimate->save();
-                Log::info('Created temporary estimate:', [
-                    'id' => $this->estimate->id,
-                    'user_id' => $this->estimate->user_id,
-                    'tenant_id' => $this->estimate->tenant_id
-                ]);
+                DB::transaction(function () {
+                    $this->estimate->save();
+                    
+                    // Ensure the estimate is properly loaded with all relationships
+                    $this->estimate = Estimate::with([
+                        'items',
+                        'assemblies.items.laborRate',
+                        'packages.assemblies.items.laborRate'
+                    ])->find($this->estimate->id);
+                    
+                    Log::info('Created temporary estimate:', [
+                        'id' => $this->estimate->id,
+                        'user_id' => $this->estimate->user_id,
+                        'tenant_id' => $this->estimate->tenant_id
+                    ]);
+                });
             } catch (\Exception $e) {
                 Log::error('Error creating temporary estimate:', [
                     'error' => $e->getMessage(),
@@ -541,170 +611,6 @@ class EstimateForm extends Component
         }
     }
     
-    public function addItem()
-    {
-        if (empty($this->selectedItem)) {
-            session()->flash('error', 'Please select an item to add.');
-            return;
-        }
-        
-        if ($this->itemQuantity <= 0) {
-            session()->flash('error', 'Quantity must be greater than zero.');
-            return;
-        }
-        
-        try {
-            Log::info('addItem - Starting with state:', [
-                'current_items_count' => $this->items instanceof \Illuminate\Support\Collection ? $this->items->count() : 'not a collection',
-                'current_items' => $this->items instanceof \Illuminate\Support\Collection ? $this->items->map(function($item) {
-                    return [
-                        'id' => $item->id,
-                        'name' => $item->name,
-                        'estimate_id' => $item->estimate_id
-                    ];
-                })->toArray() : 'not a collection',
-                'selected_item_id' => $this->selectedItem,
-                'quantity' => $this->itemQuantity
-            ]);
-            
-            $item = Item::findOrFail($this->selectedItem);
-            
-            // Get default labor rate
-            $laborRate = LaborRate::where('tenant_id', auth()->user()->current_tenant_id)
-                ->where('is_default', true)
-                ->first();
-                
-            if (!$laborRate) {
-                // Fallback to any labor rate if no default is set
-                $laborRate = LaborRate::where('tenant_id', auth()->user()->current_tenant_id)
-                    ->first();
-            }
-            
-            if (!$laborRate) {
-                throw new \Exception('No labor rate found. Please create at least one labor rate.');
-            }
-            
-            // Create a new EstimateItem model instance with explicit estimate_id
-            $estimateItem = new EstimateItem([
-                'tenant_id' => auth()->user()->current_tenant_id,
-                'estimate_id' => $this->estimate->id,
-                'item_id' => $item->id,
-                'original_item_id' => $item->id,
-                'name' => $item->name,
-                'description' => $item->description,
-                'quantity' => $this->itemQuantity,
-                'unit_of_measure' => $item->unit_of_measure,
-                'material_cost_rate' => $item->material_cost_rate,
-                'material_charge_rate' => $item->material_charge_rate,
-                'labor_units' => $item->labor_units,
-                'labor_rate_id' => $laborRate->id,
-                'original_cost_rate' => $item->material_cost_rate,
-                'original_charge_rate' => $item->material_charge_rate,
-            ]);
-
-            Log::info('addItem - Before saving new item:', [
-                'new_item' => [
-                    'estimate_id' => $estimateItem->estimate_id,
-                    'name' => $estimateItem->name,
-                    'quantity' => $estimateItem->quantity
-                ]
-            ]);
-
-            // Save the new item
-            $estimateItem->save();
-            
-            Log::info('addItem - After saving new item:', [
-                'saved_item' => [
-                    'id' => $estimateItem->id,
-                    'estimate_id' => $estimateItem->estimate_id,
-                    'name' => $estimateItem->name
-                ]
-            ]);
-            
-            // Always ensure we have a fresh collection
-            $this->items = collect($this->estimate->items()->get());
-            
-            Log::info('addItem - After refreshing collection:', [
-                'items_count' => $this->items->count(),
-                'items' => $this->items->map(function($item) {
-                    return [
-                        'id' => $item->id,
-                        'name' => $item->name,
-                        'estimate_id' => $item->estimate_id,
-                        'quantity' => $item->quantity
-                    ];
-                })->toArray()
-            ]);
-            
-            $this->selectedItem = '';
-            $this->itemQuantity = 1;
-            
-            $this->calculateTotals();
-            
-        } catch (\Exception $e) {
-            Log::error('Error adding item to estimate', [
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
-            ]);
-            session()->flash('error', 'Error adding item: ' . $e->getMessage());
-        }
-    }
-    
-    public function editItem($index)
-    {
-        $this->editingItemIndex = $index;
-        $this->editingItemQuantity = $this->items[$index]->quantity;
-    }
-    
-    public function updateItem()
-    {
-        if ($this->editingItemQuantity <= 0) {
-            session()->flash('error', 'Quantity must be greater than zero.');
-            return;
-        }
-        
-        // Get the item from the collection using get() to ensure we have the model instance
-        $item = $this->items->get($this->editingItemIndex);
-        $item->quantity = $this->editingItemQuantity;
-        $item->save(); // Save to database
-        
-        $this->editingItemIndex = null;
-        $this->editingItemQuantity = null;
-        
-        $this->calculateTotals();
-    }
-    
-    public function cancelEditItem()
-    {
-        $this->editingItemIndex = null;
-        $this->editingItemQuantity = null;
-    }
-    
-    public function removeItem($index)
-    {
-        try {
-            // Get the item before removing it from the collection
-            $item = $this->items->get($index);
-            
-            // If it's a database record, delete it
-            if ($item instanceof EstimateItem && $item->id) {
-                $item->delete();
-            }
-            
-            // Remove from the collection and re-index
-            $this->items = $this->items->forget($index)->values();
-            
-            $this->calculateTotals();
-        } catch (\Exception $e) {
-            Log::error('Error removing item', [
-                'error' => $e->getMessage(),
-                'index' => $index,
-                'items' => $this->items->toArray()
-            ]);
-            session()->flash('error', 'Error removing item: ' . $e->getMessage());
-        }
-    }
-    
     public function addAssembly()
     {
         if (empty($this->selectedAssembly)) {
@@ -718,14 +624,6 @@ class EstimateForm extends Component
         }
         
         try {
-            Log::info('Before adding assembly - Current state:', [
-                'items_count' => $this->items instanceof \Illuminate\Support\Collection ? $this->items->count() : 'not a collection',
-                'items_type' => gettype($this->items),
-                'assemblies_count' => $this->assemblies instanceof \Illuminate\Support\Collection ? $this->assemblies->count() : 'not a collection',
-                'assemblies_type' => gettype($this->assemblies),
-                'first_item' => $this->items->first() ? get_class($this->items->first()) : 'no items'
-            ]);
-            
             $assembly = Assembly::with('items')->findOrFail($this->selectedAssembly);
             
             // Get labor rate
@@ -734,7 +632,6 @@ class EstimateForm extends Component
                 ->first();
                 
             if (!$laborRate) {
-                // Fallback to any labor rate if no default is set
                 $laborRate = LaborRate::where('tenant_id', auth()->user()->current_tenant_id)
                     ->first();
             }
@@ -743,135 +640,105 @@ class EstimateForm extends Component
                 throw new \Exception('No labor rate found. Please create at least one labor rate.');
             }
             
-            // Ensure collections are properly initialized
-            if (!($this->items instanceof \Illuminate\Support\Collection)) {
-                $this->items = collect($this->items);
-            }
-            
-            if (!($this->assemblies instanceof \Illuminate\Support\Collection)) {
-                $this->assemblies = collect($this->assemblies);
-            }
-            
-            // Create the estimate assembly
-            $estimateAssembly = new EstimateAssembly([
-                'tenant_id' => auth()->user()->current_tenant_id,
-                'estimate_id' => $this->estimate->id,
-                'assembly_id' => $assembly->id,
-                'original_assembly_id' => $assembly->id,
-                'name' => $assembly->name,
-                'description' => $assembly->description,
-                'quantity' => $this->assemblyQuantity
-            ]);
-
-            // Always save since we always have an estimate
-            $estimateAssembly->save();
-
-            // Initialize items collection for this assembly
-            $estimateAssembly->items = collect();
-            
-            // Add items from the assembly
-            foreach ($assembly->items as $item) {
-                $estimateItem = new EstimateItem([
+            DB::transaction(function () use ($assembly, $laborRate) {
+                // Create the estimate assembly
+                $estimateAssembly = EstimateAssembly::create([
                     'tenant_id' => auth()->user()->current_tenant_id,
-                    'estimate_assembly_id' => $estimateAssembly->id,
-                    'item_id' => $item->id,
-                    'original_item_id' => $item->id,
-                    'name' => $item->name,
-                    'description' => $item->description,
-                    'unit_of_measure' => $item->unit_of_measure,
-                    'quantity' => $item->pivot->quantity,
-                    'material_cost_rate' => $item->material_cost_rate,
-                    'material_charge_rate' => $item->material_charge_rate,
-                    'labor_units' => $item->labor_units,
-                    'labor_rate_id' => $laborRate->id,
-                    'original_cost_rate' => $item->material_cost_rate,
-                    'original_charge_rate' => $item->material_charge_rate,
+                    'estimate_id' => $this->estimate->id,
+                    'assembly_id' => $assembly->id,
+                    'original_assembly_id' => $assembly->id,
+                    'name' => $assembly->name,
+                    'description' => $assembly->description,
+                    'quantity' => $this->assemblyQuantity
                 ]);
-                
-                // Always save since we always have an assembly
-                $estimateItem->save();
-                
-                $estimateAssembly->items->push($estimateItem);
-            }
-            
-            // Add the assembly to our collection
-            $this->assemblies->push($estimateAssembly);
-            
-            // Collapse the newly added assembly
-            $this->collapsedAssemblies[] = $this->assemblies->count() - 1;
-            
-            Log::info('After adding assembly - Final state:', [
-                'items_count' => $this->items->count(),
-                'assemblies_count' => $this->assemblies->count(),
-                'first_item' => $this->items->first() ? get_class($this->items->first()) : 'no items',
-                'first_assembly' => $this->assemblies->first() ? get_class($this->assemblies->first()) : 'no assemblies',
-                'items_data' => $this->items->map(function($item) {
-                    return [
-                        'id' => $item->item_id,
+
+                // Add items from the assembly
+                foreach ($assembly->items as $item) {
+                    EstimateItem::create([
+                        'tenant_id' => auth()->user()->current_tenant_id,
+                        'estimate_assembly_id' => $estimateAssembly->id,
+                        'item_id' => $item->id,
+                        'original_item_id' => $item->id,
                         'name' => $item->name,
-                        'quantity' => $item->quantity
-                    ];
-                })->toArray()
-            ]);
+                        'description' => $item->description,
+                        'unit_of_measure' => $item->unit_of_measure,
+                        'quantity' => $item->pivot->quantity,
+                        'material_cost_rate' => $item->material_cost_rate,
+                        'material_charge_rate' => $item->material_charge_rate,
+                        'labor_units' => $item->labor_units,
+                        'labor_rate_id' => $laborRate->id,
+                        'original_cost_rate' => $item->material_cost_rate,
+                        'original_charge_rate' => $item->material_charge_rate,
+                    ]);
+                }
+            });
+
+            // Refresh the estimate
+            $this->estimate = Estimate::with([
+                'items',
+                'assemblies.items',
+                'packages.assemblies.items'
+            ])->find($this->estimate->id);
             
+            // Update assemblies collection
+            $this->assemblies = collect($this->estimate->assemblies);
+            
+            // Reset form
             $this->selectedAssembly = '';
             $this->assemblyQuantity = 1;
             
+            // Recalculate totals
             $this->calculateTotals();
+            
         } catch (\Exception $e) {
             Log::error('Error adding assembly to estimate', [
                 'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString(),
-                'selectedAssembly' => $this->selectedAssembly,
-                'assemblyQuantity' => $this->assemblyQuantity
+                'trace' => $e->getTraceAsString()
             ]);
             session()->flash('error', 'Error adding assembly: ' . $e->getMessage());
         }
     }
     
-    public function editAssembly($index)
-    {
-        $this->editingAssemblyIndex = $index;
-        $this->editingAssemblyQuantity = $this->assemblies[$index]->quantity;
-    }
-    
-    public function updateAssembly()
-    {
-        if ($this->editingAssemblyQuantity <= 0) {
-            session()->flash('error', 'Quantity must be greater than zero.');
-            return;
-        }
-        
-        // Get the assembly from the collection using get() to ensure we have the model instance
-        $assembly = $this->assemblies->get($this->editingAssemblyIndex);
-        $assembly->quantity = $this->editingAssemblyQuantity;
-        $assembly->save(); // Save to database
-        
-        $this->editingAssemblyIndex = null;
-        $this->editingAssemblyQuantity = null;
-        
-        $this->calculateTotals();
-    }
-    
-    public function cancelEditAssembly()
-    {
-        $this->editingAssemblyIndex = null;
-        $this->editingAssemblyQuantity = null;
-    }
-    
     public function removeAssembly($index)
     {
-        // Ensure assemblies is a collection
-        if (!($this->assemblies instanceof \Illuminate\Support\Collection)) {
-            $this->assemblies = collect($this->assemblies);
+        try {
+            $assembly = $this->assemblies->get($index);
+            
+            if ($assembly && $assembly->id) {
+                DB::transaction(function () use ($assembly) {
+                    // Delete all items associated with this assembly
+                    EstimateItem::where('estimate_assembly_id', $assembly->id)->delete();
+                    
+                    // Delete the assembly
+                    $assembly->delete();
+                });
+            }
+            
+            // Refresh the estimate
+            $this->estimate = Estimate::with([
+                'items',
+                'assemblies.items',
+                'packages.assemblies.items'
+            ])->find($this->estimate->id);
+            
+            // Update assemblies collection
+            $this->assemblies = collect($this->estimate->assemblies);
+            
+            // Recalculate totals
+            $this->calculateTotals();
+            
+        } catch (\Exception $e) {
+            Log::error('Error removing assembly', [
+                'error' => $e->getMessage(),
+                'index' => $index
+            ]);
+            session()->flash('error', 'Error removing assembly: ' . $e->getMessage());
         }
-        
-        // Remove the assembly and re-index the collection
-        // Note: We need to reassign because collections are immutable
-        $this->assemblies = $this->assemblies->forget($index)->values();
-        
-        $this->calculateTotals();
     }
+    
+    public function editAssembly($index) {}
+    public function updateAssembly() {}
+    public function cancelEditAssembly() {}
     
     public function editAssemblyItem($assemblyIndex, $itemIndex)
     {

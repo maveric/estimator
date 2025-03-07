@@ -7,7 +7,9 @@ use App\Models\Package;
 use App\Models\EstimatePackage;
 use App\Models\EstimateAssembly;
 use App\Models\EstimateItem;
+use App\Models\LaborRate;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Log;
 
 class EstimatePackages extends Component
 {
@@ -54,6 +56,10 @@ class EstimatePackages extends Component
     public $collapsedPackages = [];
     public $collapsedAssemblies = [];
 
+    protected $listeners = [
+        'package-updated' => 'handlePackageUpdate'
+    ];
+
     public function mount($estimate = null)
     {
         $this->packages = collect();
@@ -63,7 +69,20 @@ class EstimatePackages extends Component
             $this->packages = collect($estimate->packages->map(function ($package) {
                 $package->assemblies = collect($package->assemblies->map(function ($assembly) {
                     $assembly->items = collect($assembly->items->map(function ($item) {
-                        return new EstimateItem([
+                        // Get default labor rate if not set
+                        $laborRate = $item->laborRate;
+                        if (!$laborRate) {
+                            $laborRate = LaborRate::where('tenant_id', auth()->user()->current_tenant_id)
+                                ->where('is_default', true)
+                                ->first();
+                                
+                            if (!$laborRate) {
+                                $laborRate = LaborRate::where('tenant_id', auth()->user()->current_tenant_id)
+                                    ->first();
+                            }
+                        }
+
+                        $estimateItem = new EstimateItem([
                             'id' => $item->id,
                             'tenant_id' => $item->tenant_id,
                             'estimate_assembly_id' => $item->estimate_assembly_id,
@@ -76,10 +95,17 @@ class EstimatePackages extends Component
                             'material_cost_rate' => $item->material_cost_rate,
                             'material_charge_rate' => $item->material_charge_rate,
                             'labor_units' => $item->labor_units,
-                            'labor_rate_id' => $item->labor_rate_id,
+                            'labor_rate_id' => $laborRate ? $laborRate->id : null,
                             'original_cost_rate' => $item->original_cost_rate,
                             'original_charge_rate' => $item->original_charge_rate,
                         ]);
+                        
+                        // Set the labor rate relationship if it exists
+                        if ($laborRate) {
+                            $estimateItem->setRelation('laborRate', $laborRate);
+                        }
+                        
+                        return $estimateItem;
                     }));
                     return $assembly;
                 }));
@@ -98,82 +124,100 @@ class EstimatePackages extends Component
 
     public function addPackage()
     {
-        if (!$this->selectedPackage || $this->packageQuantity <= 0) {
-            return;
-        }
+        try {
+            if (empty($this->selectedPackage)) {
+                throw new \Exception('Please select a package to add.');
+            }
 
-        $package = Package::with(['assemblies.items'])->find($this->selectedPackage);
-        if (!$package) {
-            return;
-        }
+            $originalPackage = Package::with(['assemblies.items.laborRate'])->find($this->selectedPackage);
+            
+            if (!$originalPackage) {
+                throw new \Exception('Selected package not found.');
+            }
 
-        \Log::info('EstimatePackages - Creating new package:', [
-            'selected_package_id' => $this->selectedPackage,
-            'quantity' => $this->packageQuantity
-        ]);
-
-        // Create and save the estimate package
-        $estimatePackage = new EstimatePackage([
-            'tenant_id' => auth()->user()->current_tenant_id,
-            'estimate_id' => $this->estimate->id,
-            'package_id' => $package->id,
-            'original_package_id' => $package->id,
-            'name' => $package->name,
-            'description' => $package->description,
-            'quantity' => $this->packageQuantity,
-        ]);
-
-        $estimatePackage->save();
-
-        // Create assemblies and items for this package
-        foreach ($package->assemblies as $assembly) {
-            $estimateAssembly = new EstimateAssembly([
+            // Create a new estimate package
+            $estimatePackage = new EstimatePackage([
                 'tenant_id' => auth()->user()->current_tenant_id,
-                'estimate_package_id' => $estimatePackage->id,
-                'assembly_id' => $assembly->id,
-                'original_assembly_id' => $assembly->id,
-                'name' => $assembly->name,
-                'description' => $assembly->description,
-                'quantity' => $assembly->pivot->quantity,
+                'estimate_id' => $this->estimate->id,
+                'package_id' => $originalPackage->id,
+                'original_package_id' => $originalPackage->id,
+                'name' => $originalPackage->name,
+                'description' => $originalPackage->description,
+                'quantity' => $this->packageQuantity,
             ]);
 
-            $estimateAssembly->save();
+            $estimatePackage->save();
 
-            foreach ($assembly->items as $item) {
-                $estimateItem = new EstimateItem([
+            // Clone assemblies and their items
+            foreach ($originalPackage->assemblies as $assembly) {
+                $estimateAssembly = new EstimateAssembly([
                     'tenant_id' => auth()->user()->current_tenant_id,
-                    'estimate_assembly_id' => $estimateAssembly->id,
-                    'item_id' => $item->id,
-                    'original_item_id' => $item->id,
-                    'name' => $item->name,
-                    'description' => $item->description,
-                    'unit_of_measure' => $item->unit_of_measure,
-                    'quantity' => $item->pivot->quantity,
-                    'material_cost_rate' => $item->material_cost_rate,
-                    'material_charge_rate' => $item->material_charge_rate,
-                    'labor_units' => $item->labor_units,
-                    'labor_rate_id' => $item->labor_rate_id,
-                    'original_cost_rate' => $item->material_cost_rate,
-                    'original_charge_rate' => $item->material_charge_rate,
+                    'estimate_package_id' => $estimatePackage->id,
+                    'original_assembly_id' => $assembly->id,
+                    'name' => $assembly->name,
+                    'description' => $assembly->description,
+                    'quantity' => $assembly->pivot->quantity ?? 1
                 ]);
+                $estimateAssembly->save();
 
-                $estimateItem->save();
+                // Clone items for this assembly
+                foreach ($assembly->items as $item) {
+                    // Get labor rate from item or default
+                    $laborRate = $item->laborRate;
+                    if (!$laborRate) {
+                        $laborRate = LaborRate::where('tenant_id', auth()->user()->current_tenant_id)
+                            ->where('is_default', true)
+                            ->first();
+                            
+                        if (!$laborRate) {
+                            $laborRate = LaborRate::where('tenant_id', auth()->user()->current_tenant_id)
+                                ->first();
+                        }
+                        
+                        if (!$laborRate) {
+                            throw new \Exception('No labor rate found. Please create at least one labor rate.');
+                        }
+                    }
+
+                    $estimateItem = new EstimateItem([
+                        'tenant_id' => auth()->user()->current_tenant_id,
+                        'estimate_assembly_id' => $estimateAssembly->id,
+                        'item_id' => $item->id,
+                        'original_item_id' => $item->id,
+                        'name' => $item->name,
+                        'description' => $item->description,
+                        'unit_of_measure' => $item->unit_of_measure,
+                        'quantity' => $item->pivot->quantity ?? 1,
+                        'material_cost_rate' => $item->material_cost_rate,
+                        'material_charge_rate' => $item->material_charge_rate,
+                        'labor_units' => $item->labor_units,
+                        'labor_rate_id' => $laborRate->id,
+                        'original_cost_rate' => $item->material_cost_rate,
+                        'original_charge_rate' => $item->material_charge_rate,
+                    ]);
+
+                    $estimateItem->save();
+                }
             }
-        }
 
-        // Refresh packages from database
-        $this->packages = collect($this->estimate->packages()->with(['assemblies.items'])->get());
-        
-        // Reset form
-        $this->selectedPackage = '';
-        $this->packageQuantity = 1;
-        
-        // Add to collapsed state
-        $this->collapsedPackages[] = $this->packages->count() - 1;
-        
-        $this->emitPackagesChanged();
-        
-        session()->flash('message', 'Package added successfully.');
+            // Refresh packages collection
+            $this->estimate->refresh();
+            $this->packages = collect($this->estimate->packages()->with(['assemblies.items.laborRate'])->get());
+
+            // Reset form
+            $this->selectedPackage = '';
+            $this->packageQuantity = 1;
+
+            $this->dispatch('estimate-updated');
+
+        } catch (\Exception $e) {
+            Log::error('Error adding package:', [
+                'error' => $e->getMessage(),
+                'estimate_id' => $this->estimate->id,
+                'package_id' => $this->selectedPackage
+            ]);
+            session()->flash('error', 'Error adding package: ' . $e->getMessage());
+        }
     }
 
     public function editPackage($index)
@@ -249,7 +293,7 @@ class EstimatePackages extends Component
             }
 
             $package = $this->packages[$this->addingAssemblyToPackageIndex];
-            $assembly = \App\Models\Assembly::with('items')->find($this->selectedAssembly);
+            $assembly = \App\Models\Assembly::with(['items.laborRate'])->find($this->selectedAssembly);
 
             if (!$package || !$assembly) {
                 throw new \Exception('Package or assembly not found');
@@ -270,6 +314,23 @@ class EstimatePackages extends Component
 
             // Create items for this assembly
             foreach ($assembly->items as $item) {
+                // Get default labor rate if not set
+                $laborRate = $item->laborRate;
+                if (!$laborRate) {
+                    $laborRate = LaborRate::where('tenant_id', auth()->user()->current_tenant_id)
+                        ->where('is_default', true)
+                        ->first();
+                        
+                    if (!$laborRate) {
+                        $laborRate = LaborRate::where('tenant_id', auth()->user()->current_tenant_id)
+                            ->first();
+                    }
+                    
+                    if (!$laborRate) {
+                        throw new \Exception('No labor rate found. Please create at least one labor rate.');
+                    }
+                }
+
                 $estimateItem = new EstimateItem([
                     'tenant_id' => auth()->user()->current_tenant_id,
                     'estimate_assembly_id' => $estimateAssembly->id,
@@ -282,7 +343,7 @@ class EstimatePackages extends Component
                     'material_cost_rate' => $item->material_cost_rate,
                     'material_charge_rate' => $item->material_charge_rate,
                     'labor_units' => $item->labor_units,
-                    'labor_rate_id' => $item->labor_rate_id,
+                    'labor_rate_id' => $laborRate->id,
                     'original_cost_rate' => $item->material_cost_rate,
                     'original_charge_rate' => $item->material_charge_rate,
                 ]);
@@ -291,7 +352,7 @@ class EstimatePackages extends Component
             }
 
             // Refresh packages from database
-            $this->packages = collect($this->estimate->packages()->with(['assemblies.items'])->get());
+            $this->packages = collect($this->estimate->packages()->with(['assemblies.items.laborRate'])->get());
 
             // Reset form
             $this->cancelAddingAssemblyToPackage();
@@ -610,16 +671,28 @@ class EstimatePackages extends Component
         ]);
     }
 
+    public function handlePackageUpdate($data)
+    {
+        try {
+            $this->dispatch('estimate-updated');
+        } catch (\Exception $e) {
+            Log::error('Error handling package update:', [
+                'error' => $e->getMessage(),
+                'estimate_id' => $this->estimate->id
+            ]);
+        }
+    }
+
     public function render()
     {
-        $availablePackages = Package::orderBy('name')->get();
-        $availableAssemblies = \App\Models\Assembly::orderBy('name')->get();
-        $availableItems = \App\Models\Item::orderBy('name')->get();
+        $availablePackages = Package::with(['assemblies.items.laborRate'])
+            ->where('tenant_id', auth()->user()->current_tenant_id)
+            ->where('is_active', true)
+            ->orderBy('name')
+            ->get();
         
         return view('livewire.estimates.estimate-packages', [
-            'availablePackages' => $availablePackages,
-            'availableAssemblies' => $availableAssemblies,
-            'availableItems' => $availableItems
+            'availablePackages' => $availablePackages
         ]);
     }
 } 

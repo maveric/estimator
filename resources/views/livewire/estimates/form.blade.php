@@ -27,15 +27,26 @@
 
             <!-- Packages Component -->
             <livewire:estimates.estimate-packages :estimate="$estimate" />
+            
+            <!-- Assemblies Section -->
+            <div class="mt-6">
+                <livewire:estimates.estimate-assemblies 
+                    :estimate="$estimate"
+                    :assemblies="$assemblies"
+                    wire:key="estimate-assemblies-{{ $estimate->id }}"
+                />
+            </div>
 
-            {{-- <!-- Items Component -->
-            <livewire:estimates.estimate-items :estimate="$estimate" /> --}}
+            <!-- Direct Items Section -->
+            <div class="mt-6">
+                <livewire:shared.items-table 
+                    :parent-type="'estimate'"
+                    :parent-id="$estimate->id"
+                    :items="$items"
+                    wire:key="estimate-items-{{ $estimate->id }}"
+                />
+            </div>
 
-            <!-- Assemblies Component -->
-            <livewire:estimates.estimate-assemblies :estimate="$estimate" />
-
-            <!-- Items Component -->
-            <livewire:estimates.estimate-items :estimate="$estimate" />
 
             <!-- Totals Section -->
             <div class="bg-white shadow overflow-hidden sm:rounded-lg mb-6">
