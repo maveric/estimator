@@ -79,9 +79,11 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/categories', \App\Livewire\Categories\CategoryManager::class)->name('categories.index');
 
     // Estimates Routes
-    Route::get('/estimates', App\Livewire\Estimates\EstimateList::class)->name('estimates.index');
-    Route::get('/estimates/create', App\Livewire\Estimates\EstimateForm::class)->name('estimates.create');
-    Route::get('/estimates/{estimate}/edit', App\Livewire\Estimates\EstimateForm::class)->name('estimates.edit');
+    Route::get('/estimates', \App\Livewire\Estimates\ListEstimates::class)->name('estimates.index');
+    Route::get('/estimates/create', \App\Livewire\Estimates\EstimateForm::class)->name('estimates.create');
+    Route::get('/estimates/{estimate}/edit', \App\Livewire\Estimates\EstimateForm::class)
+        ->name('estimates.edit')
+        ->whereNumber('estimate');
     Route::get('/estimates/{estimate}', App\Livewire\Estimates\EstimateView::class)
         ->name('estimates.view')
         ->whereNumber('estimate');

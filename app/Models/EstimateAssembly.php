@@ -299,4 +299,38 @@ class EstimateAssembly extends Model
     {
         return $this->calculateCharge();
     }
+
+    public function calculateTotals()
+    {
+        $materialCost = 0;
+        $materialCharge = 0;
+        $laborCost = 0;
+        $laborCharge = 0;
+
+        foreach ($this->items as $item) {
+            // Calculate material totals
+            $materialCost += $item->quantity * $item->material_cost_rate;
+            $materialCharge += $item->quantity * $item->material_charge_rate;
+            
+            // Convert labor units to hours and calculate using the appropriate rates
+            $laborHours = ($item->quantity * $item->labor_units) / 60;
+            if ($item->laborRate) {
+                $laborCost += $laborHours * $item->laborRate->cost_rate;
+                $laborCharge += $laborHours * $item->laborRate->charge_rate;
+            }
+        }
+
+        // Multiply by assembly quantity
+        $materialCost *= $this->quantity;
+        $materialCharge *= $this->quantity;
+        $laborCost *= $this->quantity;
+        $laborCharge *= $this->quantity;
+        
+        return [
+            'material_cost' => $materialCost,
+            'material_charge' => $materialCharge,
+            'labor_cost' => $laborCost,
+            'labor_charge' => $laborCharge
+        ];
+    }
 }

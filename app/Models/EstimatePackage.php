@@ -71,52 +71,23 @@ class EstimatePackage extends Model
      */
     public function calculateCost(): array
     {
-        $totalMaterialCost = 0;
-        $totalLaborCost = 0;
-        $totalMaterialCharge = 0;
-        $totalLaborCharge = 0;
+        $materialCost = 0;
+        $laborCost = 0;
+        $materialCharge = 0;
+        $laborCharge = 0;
 
-        // Get the primary labor rate
-        $primaryLaborRate = LaborRate::where('is_primary', true)
-            ->where('tenant_id', $this->tenant_id)
-            ->active()
-            ->first();
-            
-        if (!$primaryLaborRate) {
-            throw new \RuntimeException('No primary labor rate found');
-        }
-
+        // Sum up assembly totals (which already include their quantities)
         foreach ($this->assemblies as $assembly) {
-            foreach ($assembly->items as $item) {
-                // Calculate material costs
-                $materialCost = $item->material_cost_rate * $item->quantity;
-                $materialCharge = $item->material_charge_rate * $item->quantity;
-                
-                // Calculate labor costs (convert minutes to hours)
-                $laborHours = ($item->labor_units * $item->quantity) / 60;
-                
-                // Use item's labor rate if set, otherwise use primary labor rate
-                $laborRate = $item->laborRate ?? $primaryLaborRate;
-                $laborCost = $laborHours * $laborRate->cost_rate;
-                $laborCharge = $laborHours * $laborRate->charge_rate;
-                
-                // Multiply by assembly quantity
-                $totalMaterialCost += $materialCost * $assembly->quantity;
-                $totalLaborCost += $laborCost * $assembly->quantity;
-                $totalMaterialCharge += $materialCharge * $assembly->quantity;
-                $totalLaborCharge += $laborCharge * $assembly->quantity;
-            }
+            $assemblyTotals = $assembly->calculateTotals();
+            $materialCost += $assemblyTotals['material_cost'];
+            $materialCharge += $assemblyTotals['material_charge'];
+            $laborCost += $assemblyTotals['labor_cost'];
+            $laborCharge += $assemblyTotals['labor_charge'];
         }
-
-        // Multiply by package quantity
-        $totalMaterialCost *= $this->quantity;
-        $totalLaborCost *= $this->quantity;
-        $totalMaterialCharge *= $this->quantity;
-        $totalLaborCharge *= $this->quantity;
 
         return [
-            'total_cost' => $totalMaterialCost + $totalLaborCost,
-            'total_charge' => $totalMaterialCharge + $totalLaborCharge
+            'total_cost' => $materialCost + $laborCost,
+            'total_charge' => $materialCharge + $laborCharge
         ];
     }
 
@@ -136,5 +107,32 @@ class EstimatePackage extends Model
     {
         $costs = $this->calculateCost();
         return $costs['total_charge'];
+    }
+
+    /**
+     * Calculate totals for the package, including material and labor costs/charges.
+     */
+    public function calculateTotals(): array
+    {
+        $materialCost = 0;
+        $laborCost = 0;
+        $materialCharge = 0;
+        $laborCharge = 0;
+
+        // Sum up assembly totals (which already include their quantities)
+        foreach ($this->assemblies as $assembly) {
+            $assemblyTotals = $assembly->calculateTotals();
+            $materialCost += $assemblyTotals['material_cost'];
+            $materialCharge += $assemblyTotals['material_charge'];
+            $laborCost += $assemblyTotals['labor_cost'];
+            $laborCharge += $assemblyTotals['labor_charge'];
+        }
+
+        return [
+            'material_cost' => $materialCost,
+            'material_charge' => $materialCharge,
+            'labor_cost' => $laborCost,
+            'labor_charge' => $laborCharge
+        ];
     }
 }

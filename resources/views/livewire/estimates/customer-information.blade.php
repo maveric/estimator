@@ -1,51 +1,48 @@
-<div class="bg-white shadow overflow-hidden sm:rounded-lg mb-6">
-    <div class="px-4 py-5 sm:p-6">
-        <h3 class="text-lg leading-6 font-medium text-gray-900">Customer Information</h3>
-        <div class="mt-5 grid grid-cols-1 gap-y-6 gap-x-4 sm:grid-cols-6">
-            <div class="sm:col-span-3">
-                <label for="customer_name" class="block text-sm font-medium text-gray-700">Customer Name</label>
-                <input type="text" 
-                       wire:model.live="customer_name" 
-                       id="customer_name" 
-                       class="mt-1 focus:ring-indigo-500 focus:border-indigo-500 block w-full shadow-sm sm:text-sm border-gray-300 rounded-md">
-                @error('customer_name') <span class="text-red-500 text-xs">{{ $message }}</span> @enderror
-            </div>
-
-            <div class="sm:col-span-3">
-                <label for="customer_email" class="block text-sm font-medium text-gray-700">Email</label>
-                <input type="email" 
-                       wire:model.live="customer_email" 
-                       id="customer_email" 
-                       class="mt-1 focus:ring-indigo-500 focus:border-indigo-500 block w-full shadow-sm sm:text-sm border-gray-300 rounded-md">
-                @error('customer_email') <span class="text-red-500 text-xs">{{ $message }}</span> @enderror
-            </div>
-
-            <div class="sm:col-span-3">
-                <label for="customer_phone" class="block text-sm font-medium text-gray-700">Phone</label>
-                <input type="text" 
-                       wire:model.live="customer_phone" 
-                       id="customer_phone" 
-                       class="mt-1 focus:ring-indigo-500 focus:border-indigo-500 block w-full shadow-sm sm:text-sm border-gray-300 rounded-md">
-                @error('customer_phone') <span class="text-red-500 text-xs">{{ $message }}</span> @enderror
-            </div>
-
-            <div class="sm:col-span-3">
-                <label for="valid_until" class="block text-sm font-medium text-gray-700">Valid Until</label>
-                <input type="date" 
-                       wire:model.live="valid_until" 
-                       id="valid_until" 
-                       class="mt-1 focus:ring-indigo-500 focus:border-indigo-500 block w-full shadow-sm sm:text-sm border-gray-300 rounded-md">
-                @error('valid_until') <span class="text-red-500 text-xs">{{ $message }}</span> @enderror
-            </div>
-
-            <div class="sm:col-span-6">
-                <label for="customer_address" class="block text-sm font-medium text-gray-700">Address</label>
-                <textarea wire:model.live="customer_address" 
-                          id="customer_address" 
-                          rows="3" 
-                          class="mt-1 focus:ring-indigo-500 focus:border-indigo-500 block w-full shadow-sm sm:text-sm border-gray-300 rounded-md"></textarea>
-                @error('customer_address') <span class="text-red-500 text-xs">{{ $message }}</span> @enderror
-            </div>
+<!-- Customer Information Form -->
+<div class="bg-white rounded-lg shadow-sm p-4">
+    <h3 class="text-lg font-medium text-gray-900 mb-4">Customer Information</h3>
+    <div class="grid grid-cols-2 gap-4">
+        <div class="col-span-2">
+            <x-form.input-group
+                label="Customer Name"
+                type="text"
+                name="customer_name"
+                model="customer_name"
+            />
+        </div>
+        <div>
+            <x-form.input-group
+                label="Email"
+                type="email"
+                name="customer_email"
+                model="customer_email"
+            />
+        </div>
+        <div>
+            <x-form.input-group
+                label="Phone"
+                type="tel"
+                name="customer_phone"
+                model="customer_phone"
+            />
+        </div>
+        <div class="col-span-2">
+            <label class="block text-sm font-medium text-gray-700">Address</label>
+            <textarea 
+                wire:model="customer_address"
+                name="customer_address"
+                rows="2"
+                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+            ></textarea>
+            @error('customer_address') <span class="text-red-500 text-xs">{{ $message }}</span> @enderror
+        </div>
+        <div>
+            <x-form.input-group
+                label="Valid Until"
+                type="date"
+                name="valid_until"
+                model="valid_until"
+            />
         </div>
     </div>
 </div> 

@@ -24,6 +24,7 @@ class Estimate extends Model
         'status',
         'markup_percentage',
         'discount_percentage',
+        'discount_amount',
         'notes',
         'total_cost',
         'total_charge',
@@ -36,6 +37,7 @@ class Estimate extends Model
     protected $casts = [
         'markup_percentage' => 'decimal:2',
         'discount_percentage' => 'decimal:2',
+        'discount_amount' => 'decimal:2',
         'valid_until' => 'date',
         'version' => 'integer',
     ];
