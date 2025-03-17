@@ -22,8 +22,8 @@ class LaborRate extends Model
     ];
 
     protected $casts = [
-        'cost_rate' => 'decimal:4',
-        'price_rate' => 'decimal:4',
+        'cost_rate' => 'decimal:2',
+        'price_rate' => 'decimal:2',
         'is_default' => 'boolean',
         'is_active' => 'boolean',
     ];
