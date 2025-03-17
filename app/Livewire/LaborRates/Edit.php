@@ -5,8 +5,10 @@ namespace App\Livewire\LaborRates;
 use App\Models\LaborRate;
 use Illuminate\Support\Facades\Auth;
 use Livewire\Component;
+use Livewire\Attributes\Layout;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 
+#[Layout('layouts.app')]
 class Edit extends Component
 {
     use AuthorizesRequests;
@@ -26,8 +28,6 @@ class Edit extends Component
         'is_default' => 'boolean',
         'is_active' => 'boolean',
     ];
-
-    protected $layout = 'layouts.app';
 
     public function mount(LaborRate $laborRate)
     {
@@ -80,6 +80,6 @@ class Edit extends Component
 
     public function render()
     {
-        return view('livewire.labor-rates.edit')->layout('layouts.app');
+        return view('livewire.labor-rates.edit');
     }
 }

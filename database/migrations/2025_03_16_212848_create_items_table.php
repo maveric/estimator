@@ -20,10 +20,7 @@ return new class extends Migration
             $table->decimal('material_price', 10, 4)->default(0);
             // Labor time and rates
             $table->integer('labor_minutes')->default(0);
-            $table->decimal('labor_cost', 10, 4)->default(0);
-            $table->decimal('labor_price', 10, 4)->default(0);
-            // Item type and status
-            $table->enum('type', ['material', 'labor', 'both'])->default('material');
+            $table->foreignId('labor_rate_id')->constrained()->cascadeOnDelete();
             $table->boolean('is_template')->default(false);
             $table->boolean('is_active')->default(true);
             // Timestamps and soft deletes
@@ -31,7 +28,6 @@ return new class extends Migration
             $table->softDeletes();
             
             // Indexes
-            $table->index(['team_id', 'type']);
             $table->index(['team_id', 'is_template']);
             $table->unique(['team_id', 'sku']);
         });

@@ -18,9 +18,10 @@ class ItemFactory extends Factory
             'name' => $this->faker->words(3, true),
             'description' => $this->faker->sentence(),
             'sku' => $this->faker->unique()->regexify('[A-Z0-9]{8}'),
-            'material_cost' => $this->faker->randomFloat(2, 1, 100),
+            'unit_of_measure' => $this->faker->randomElement(['EA', 'LF', 'SF', 'SY', 'CY', 'TON', 'GAL', 'HR']),
+            'material_cost' => $this->faker->randomFloat(4, 1, 100),
             'material_price' => function (array $attributes) {
-                return $attributes['material_cost'] * $this->faker->randomFloat(2, 1.2, 1.5);
+                return number_format($attributes['material_cost'] * $this->faker->randomFloat(2, 1.2, 1.5), 4);
             },
             'labor_minutes' => $this->faker->randomFloat(2, 5, 120),
             'labor_rate_id' => LaborRate::factory(),
@@ -41,28 +42,5 @@ class ItemFactory extends Factory
         return $this->state(fn (array $attributes) => [
             'is_active' => false,
         ]);
-    }
-
-    public function material(): self
-    {
-        return $this->state(function (array $attributes) {
-            return [
-                'type' => 'material',
-                'labor_minutes' => 0,
-                'labor_cost' => 0,
-                'labor_price' => 0,
-            ];
-        });
-    }
-
-    public function labor(): self
-    {
-        return $this->state(function (array $attributes) {
-            return [
-                'type' => 'labor',
-                'material_cost' => 0,
-                'material_price' => 0,
-            ];
-        });
     }
 } 

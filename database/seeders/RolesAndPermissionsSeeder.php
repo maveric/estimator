@@ -20,40 +20,41 @@ class RolesAndPermissionsSeeder extends Seeder
 
         // Create permissions
         $permissions = [
+            // Labor Rates
             'view labor rates',
             'create labor rates',
             'edit labor rates',
             'delete labor rates',
+            
+            // Items
+            'view items',
+            'create items',
+            'edit items',
+            'delete items',
+            
+            // Estimates
+            'view estimates',
+            'create estimates',
+            'edit estimates',
+            'delete estimates',
+            'approve estimates',
+            
+            // Assemblies
+            'view assemblies',
+            'create assemblies',
+            'edit assemblies',
+            'delete assemblies',
+            
+            // Packages
+            'view packages',
+            'create packages',
+            'edit packages',
+            'delete packages',
         ];
 
         foreach ($permissions as $permission) {
             Permission::create(['name' => $permission]);
         }
-
-        // Estimates
-        Permission::create(['name' => 'view estimates']);
-        Permission::create(['name' => 'create estimates']);
-        Permission::create(['name' => 'edit estimates']);
-        Permission::create(['name' => 'delete estimates']);
-        Permission::create(['name' => 'approve estimates']);
-
-        // Items
-        Permission::create(['name' => 'view items']);
-        Permission::create(['name' => 'create items']);
-        Permission::create(['name' => 'edit items']);
-        Permission::create(['name' => 'delete items']);
-
-        // Assemblies
-        Permission::create(['name' => 'view assemblies']);
-        Permission::create(['name' => 'create assemblies']);
-        Permission::create(['name' => 'edit assemblies']);
-        Permission::create(['name' => 'delete assemblies']);
-
-        // Packages
-        Permission::create(['name' => 'view packages']);
-        Permission::create(['name' => 'create packages']);
-        Permission::create(['name' => 'edit packages']);
-        Permission::create(['name' => 'delete packages']);
 
         // Create roles and assign permissions
         
@@ -67,12 +68,28 @@ class RolesAndPermissionsSeeder extends Seeder
             'view labor rates',
             'create labor rates',
             'edit labor rates',
+            'view items',
+            'create items',
+            'edit items',
+            'view estimates',
+            'create estimates',
+            'edit estimates',
+            'view assemblies',
+            'create assemblies',
+            'edit assemblies',
+            'view packages',
+            'create packages',
+            'edit packages',
         ]);
 
         // Estimator role
         $estimatorRole = Role::create(['name' => 'estimator']);
         $estimatorRole->givePermissionTo([
             'view labor rates',
+            'view items',
+            'view estimates',
+            'view assemblies',
+            'view packages',
         ]);
     }
 }

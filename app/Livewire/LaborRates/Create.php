@@ -5,7 +5,10 @@ namespace App\Livewire\LaborRates;
 use App\Models\LaborRate;
 use Illuminate\Support\Facades\Auth;
 use Livewire\Component;
+use Livewire\Attributes\Rule;
+use Livewire\Attributes\Layout;
 
+#[Layout('layouts.app')]
 class Create extends Component
 {
     public $name = '';
@@ -21,8 +24,6 @@ class Create extends Component
         'is_default' => 'boolean',
         'is_active' => 'boolean',
     ];
-
-    protected $layout = 'layouts.app';
 
     public function mount()
     {
@@ -65,6 +66,6 @@ class Create extends Component
 
     public function render()
     {
-        return view('livewire.labor-rates.create')->layout('layouts.app');
+        return view('livewire.labor-rates.create');
     }
 }

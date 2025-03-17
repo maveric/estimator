@@ -2,6 +2,7 @@
 
 namespace Database\Seeders;
 
+use App\Models\Item;
 use App\Models\LaborRate;
 use App\Models\Team;
 use App\Models\User;
@@ -54,7 +55,7 @@ class TestDataSeeder extends Seeder
 
         // Create labor rates for the team
         // Default labor rate
-        LaborRate::factory()->create([
+        $defaultRate = LaborRate::factory()->create([
             'team_id' => $team->id,
             'name' => 'Standard Rate',
             'cost_rate' => 50.00,
@@ -64,15 +65,69 @@ class TestDataSeeder extends Seeder
         ]);
 
         // Additional labor rates
-        LaborRate::factory()->count(3)->create([
+        $premiumRate = LaborRate::factory()->create([
             'team_id' => $team->id,
+            'name' => 'Premium Rate',
+            'cost_rate' => 85.00,
+            'price_rate' => 125.00,
+            'is_active' => true,
         ]);
 
-        // Inactive labor rate
-        LaborRate::factory()->create([
+        // Create some test items
+        Item::factory()->create([
             'team_id' => $team->id,
+            'name' => 'Basic Installation',
+            'description' => 'Standard installation service',
+            'sku' => 'INST-001',
+            'unit_of_measure' => 'EA',
+            'material_cost' => 50.00,
+            'material_price' => 75.00,
+            'labor_minutes' => 60,
+            'labor_rate_id' => $defaultRate->id,
+            'is_template' => false,
+            'is_active' => true,
+        ]);
+
+        Item::factory()->create([
+            'team_id' => $team->id,
+            'name' => 'Premium Installation',
+            'description' => 'Premium installation with extended warranty',
+            'sku' => 'INST-002',
+            'unit_of_measure' => 'EA',
+            'material_cost' => 100.00,
+            'material_price' => 150.00,
+            'labor_minutes' => 90,
+            'labor_rate_id' => $premiumRate->id,
+            'is_template' => false,
+            'is_active' => true,
+        ]);
+
+        Item::factory()->create([
+            'team_id' => $team->id,
+            'name' => 'Maintenance Service',
+            'description' => 'Regular maintenance service',
+            'sku' => 'MAINT-001',
+            'unit_of_measure' => 'HR',
+            'material_cost' => 25.00,
+            'material_price' => 40.00,
+            'labor_minutes' => 30,
+            'labor_rate_id' => $defaultRate->id,
+            'is_template' => true,
+            'is_active' => true,
+        ]);
+
+        Item::factory()->create([
+            'team_id' => $team->id,
+            'name' => 'Discontinued Service',
+            'description' => 'No longer offered service',
+            'sku' => 'DISC-001',
+            'unit_of_measure' => 'EA',
+            'material_cost' => 75.00,
+            'material_price' => 100.00,
+            'labor_minutes' => 45,
+            'labor_rate_id' => $defaultRate->id,
+            'is_template' => false,
             'is_active' => false,
-            'name' => 'Inactive Rate',
         ]);
     }
 }
