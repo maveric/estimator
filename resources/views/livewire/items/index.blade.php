@@ -27,6 +27,45 @@
                         </div>
                     </div>
 
+                    <div class="mb-4">
+                        <div class="flex flex-wrap gap-2 mb-2">
+                            @foreach($selectedTags as $tag)
+                                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                                    {{ $tag }}
+                                    <button type="button" wire:click="removeTag('{{ $tag }}')" class="ml-1 inline-flex items-center p-0.5 text-blue-400 hover:text-blue-600">
+                                        <svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                                        </svg>
+                                    </button>
+                                </span>
+                            @endforeach
+                        </div>
+
+                        <div class="relative">
+                            <input
+                                type="text"
+                                wire:model.live="tagSearch"
+                                wire:keydown.enter="selectTag($event.target.value)"
+                                placeholder="Filter by tags..."
+                                class="block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6"
+                            >
+
+                            @if($showTagSuggestions && count($tagSuggestions) > 0)
+                                <div class="absolute z-10 mt-1 w-full bg-white shadow-lg max-h-60 rounded-md py-1 text-base ring-1 ring-black ring-opacity-5 overflow-auto focus:outline-none sm:text-sm">
+                                    @foreach($tagSuggestions as $suggestion)
+                                        <button
+                                            type="button"
+                                            wire:click="selectTag('{{ $suggestion['name'] }}')"
+                                            class="w-full text-left px-4 py-2 text-sm text-gray-900 hover:bg-blue-50"
+                                        >
+                                            {{ $suggestion['name'] }}
+                                        </button>
+                                    @endforeach
+                                </div>
+                            @endif
+                        </div>
+                    </div>
+
                     <div class="overflow-hidden shadow ring-1 ring-black ring-opacity-5 md:rounded-lg">
                         <table class="min-w-full divide-y divide-gray-300">
                             <thead class="bg-gray-50">
@@ -36,6 +75,7 @@
                                     <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Material Cost</th>
                                     <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Material Price</th>
                                     <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Labor Time</th>
+                                    <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Tags</th>
                                     <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Status</th>
                                     <th scope="col" class="relative py-3.5 pl-3 pr-4 sm:pr-6">
                                         <span class="sr-only">Actions</span>
@@ -50,6 +90,15 @@
                                         <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">${{ number_format($item->material_cost, 2) }}</td>
                                         <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">${{ number_format($item->material_price, 2) }}</td>
                                         <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">{{ number_format($item->labor_minutes / 60, 2) }} hrs</td>
+                                        <td class="px-3 py-4 text-sm text-gray-500">
+                                            <div class="flex flex-wrap gap-1">
+                                                @foreach($item->tags as $tag)
+                                                    <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                                                        {{ $tag->name }}
+                                                    </span>
+                                                @endforeach
+                                            </div>
+                                        </td>
                                         <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
                                             @can('edit items')
                                             <button wire:click="toggleStatus({{ $item->id }})" type="button" class="relative inline-flex flex-shrink-0 h-6 w-11 border-2 border-transparent rounded-full cursor-pointer transition-colors ease-in-out duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 {{ $item->is_active ? 'bg-indigo-600' : 'bg-gray-200' }}" role="switch" aria-checked="{{ $item->is_active ? 'true' : 'false' }}">

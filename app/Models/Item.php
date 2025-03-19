@@ -8,10 +8,13 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Builder;
 use Spatie\Activitylog\LogOptions;
 use Spatie\Activitylog\Traits\LogsActivity;
+use Spatie\Tags\HasTags;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Auth;
 
 class Item extends Model
 {
-    use HasFactory, SoftDeletes, LogsActivity;
+    use HasFactory, SoftDeletes, LogsActivity, HasTags;
 
     protected $fillable = [
         'team_id',
@@ -46,6 +49,81 @@ class Item extends Model
             ->useLogName('item');
     }
 
+    // Tag Methods
+    protected function ensureTeamContext()
+    {
+        if (!Auth::user()?->currentTeam) {
+            Auth::user()?->switchTeam($this->team);
+        }
+    }
+
+    public function attachTag($name)
+    {
+        $this->ensureTeamContext();
+        $tag = Tag::findOrCreateFromString(strtolower($name), null, null, $this->team_id);
+        $this->tags()->syncWithoutDetaching([$tag->id]);
+        return $this;
+    }
+
+    public function attachTags($names)
+    {
+        $this->ensureTeamContext();
+        $tags = collect($names)->map(function ($name) {
+            return Tag::findOrCreateFromString(strtolower($name), null, null, $this->team_id);
+        });
+        $this->tags()->syncWithoutDetaching($tags->pluck('id'));
+        return $this;
+    }
+
+    public function detachTag($name)
+    {
+        $this->ensureTeamContext();
+        $tag = Tag::findFromString(strtolower($name), null, null, $this->team_id);
+        if ($tag) {
+            $this->tags()->detach($tag->id);
+        }
+        return $this;
+    }
+
+    public function syncTags($names)
+    {
+        $this->ensureTeamContext();
+        $tags = collect($names)->map(function ($name) {
+            return Tag::findOrCreateFromString(strtolower($name), null, null, $this->team_id);
+        });
+        $this->tags()->sync($tags->pluck('id'));
+        return $this;
+    }
+
+    public function scopeWithAnyTags($query, $tags, $type = null)
+    {
+        $this->ensureTeamContext();
+        $tags = Tag::findOrCreate($tags, $type);
+        return $query->whereHas('tags', function (Builder $query) use ($tags) {
+            $tagIds = collect($tags)->pluck('id');
+            $query->whereIn('tags.id', $tagIds);
+        });
+    }
+
+    public function scopeWithAllTags($query, $tags, $type = null)
+    {
+        $this->ensureTeamContext();
+        $tags = Tag::findOrCreate($tags, $type);
+        return $query->whereHas('tags', function (Builder $query) use ($tags) {
+            $tagIds = collect($tags)->pluck('id');
+            $query->whereIn('tags.id', $tagIds);
+        })->has('tags', '>=', count($tags));
+    }
+
+    public function scopeWithTag($query, $tag, $type = null)
+    {
+        $this->ensureTeamContext();
+        $tag = Tag::findOrCreate($tag, $type);
+        return $query->whereHas('tags', function (Builder $query) use ($tag) {
+            $query->where('tags.id', $tag->id);
+        });
+    }
+
     // Relationships
     public function team()
     {
@@ -67,7 +145,7 @@ class Item extends Model
     // Scopes
     public function scopeForTeam(Builder $query, $teamId): Builder
     {
-        return $query->where('team_id', $teamId);
+        return $query->where('items.team_id', $teamId);
     }
 
     public function scopeActive(Builder $query): Builder

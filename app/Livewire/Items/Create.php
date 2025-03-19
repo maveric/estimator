@@ -43,11 +43,18 @@ class Create extends Component
     #[Rule('boolean')]
     public $is_active = true;
 
+    public $item;
+
     public function mount()
     {
         if (!Auth::user()->can('create items')) {
             abort(403);
         }
+
+        // Create a new item instance for the tag component
+        $this->item = new Item([
+            'team_id' => Auth::user()->currentTeam->id,
+        ]);
 
         // Set default labor rate if available
         $defaultRate = LaborRate::forTeam(Auth::user()->currentTeam->id)
@@ -80,6 +87,11 @@ class Create extends Component
         $validated['team_id'] = Auth::user()->currentTeam->id;
 
         $item = Item::create($validated);
+
+        // Attach any tags that were added during creation
+        foreach ($this->item->tags as $tag) {
+            $item->attachTag($tag->name);
+        }
 
         $this->dispatch('item-created', itemId: $item->id);
 

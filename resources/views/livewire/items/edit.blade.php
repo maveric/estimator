@@ -88,6 +88,12 @@
                                 <span class="ml-2 text-sm text-gray-600">{{ __('Is Active') }}</span>
                             </label>
                         </div>
+
+                        <!-- Tags -->
+                        <div class="col-span-6 sm:col-span-4">
+                            <x-label value="{{ __('Tags') }}" class="mb-2" />
+                            <livewire:item-tags :item="$item" />
+                        </div>
                     </div>
 
                     <div class="mt-6 flex justify-end">

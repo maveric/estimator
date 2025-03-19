@@ -3,6 +3,7 @@
 namespace App\Livewire\Items;
 
 use App\Models\Item;
+use App\Models\Tag;
 use Illuminate\Support\Facades\Auth;
 use Livewire\Component;
 use Livewire\WithPagination;
@@ -15,10 +16,15 @@ class Index extends Component
 
     public $search = '';
     public $showInactive = false;
+    public $selectedTags = [];
+    public $tagSearch = '';
+    public $tagSuggestions = [];
+    public $showTagSuggestions = false;
 
     protected $queryString = [
         'search' => ['except' => ''],
         'showInactive' => ['except' => false],
+        'selectedTags' => ['except' => []],
     ];
 
     public function mount()
@@ -36,6 +42,50 @@ class Index extends Component
     public function updatingShowInactive()
     {
         $this->resetPage();
+    }
+
+    public function updatingSelectedTags()
+    {
+        $this->resetPage();
+    }
+
+    public function updatedTagSearch($value)
+    {
+        if (strlen($value) >= 2) {
+            $this->tagSuggestions = Tag::query()
+                ->where('team_id', Auth::user()->currentTeam->id)
+                ->where(function ($query) use ($value) {
+                    $query->whereRaw("LOWER(JSON_UNQUOTE(JSON_EXTRACT(name, '$.en'))) LIKE ?", ['%' . strtolower($value) . '%']);
+                })
+                ->limit(5)
+                ->get()
+                ->map(function ($tag) {
+                    return [
+                        'id' => $tag->id,
+                        'name' => $tag->name,
+                    ];
+                })
+                ->toArray();
+            $this->showTagSuggestions = true;
+        } else {
+            $this->tagSuggestions = [];
+            $this->showTagSuggestions = false;
+        }
+    }
+
+    public function selectTag($tagName)
+    {
+        if (!in_array($tagName, $this->selectedTags)) {
+            $this->selectedTags[] = $tagName;
+        }
+        $this->tagSearch = '';
+        $this->tagSuggestions = [];
+        $this->showTagSuggestions = false;
+    }
+
+    public function removeTag($tagName)
+    {
+        $this->selectedTags = array_values(array_filter($this->selectedTags, fn($tag) => $tag !== $tagName));
     }
 
     public function toggleStatus(Item $item)
@@ -66,6 +116,9 @@ class Index extends Component
                 });
             })
             ->when(!$this->showInactive, fn ($query) => $query->where('is_active', true))
+            ->when($this->selectedTags, function ($query) {
+                $query->withAllTags($this->selectedTags);
+            })
             ->orderBy('name');
 
         $items = $query->paginate(10);
