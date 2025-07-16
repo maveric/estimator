@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, develop ]       # adjust as you grow
   pull_request:
-    branches: [ main ]
+    branches: [ main, develop ]
 
 jobs:
   laravel:
@@ -18,51 +18,58 @@ jobs:
           MYSQL_USER: forge
           MYSQL_PASSWORD: secret
           MYSQL_ROOT_PASSWORD: root
-        ports:
-          - 3306:3306
+        ports: [ '3306:3306' ]
         options: >-
-          --health-cmd="mysqladmin ping -h localhost -psecret" --health-interval=10s --health-timeout=5s --health-retries=5
+          --health-cmd="mysqladmin ping -h localhost -psecret"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
 
     steps:
-      - uses: actions/checkout@v4
+    # ───── Checkout code ───────────────────────────────────────────────
+    - uses: actions/checkout@v4
 
-      - uses: shivammathur/setup-php@v2
-        with:
-          php-version: '8.3'
-          extensions: mbstring, intl, pdo_mysql, sqlite3
-          coverage: none
+    # ───── PHP + extensions ────────────────────────────────────────────
+    - uses: shivammathur/setup-php@v2
+      with:
+        php-version: '8.3'            # keep prod parity
+        extensions: mbstring, intl, pdo_mysql, sqlite3
+        coverage: none
 
-      - name: Install Composer dependencies
-        run: composer install --no-interaction --prefer-dist --optimize-autoloader
+    # ───── Composer deps & Pint/PHPStan ────────────────────────────────
+    - name: Install Composer dependencies
+      run: composer install --no-interaction --prefer-dist --optimize-autoloader
 
-      - name: Install Bun
-        run: |
-          curl -fsSL https://bun.sh/install | bash
-          echo "$HOME/.bun/bin" >> $GITHUB_PATH
+    - name: Static analysis (PHPStan)
+      run: vendor/bin/phpstan analyse app --error-format=github
 
-      - name: JS install & build
-        run: |
-          bun install --frozen-lockfile
-          bun run build
+    - name: Code style (Pint)
+      run: vendor/bin/pint --test     # fails if style issues present
 
-      - name: Static analysis (PHPStan)
-        run: vendor/bin/phpstan analyse app --error-format=github
+    # ───── JS toolchain (Bun) ──────────────────────────────────────────
+    - name: Install Bun
+      run: |
+        curl -fsSL https://bun.sh/install | bash
+        echo "$HOME/.bun/bin" >> $GITHUB_PATH
 
-      - name: Code style (Pint)
-        run: vendor/bin/pint --test
+    - name: JS install & build
+      run: |
+        bun install --frozen-lockfile
+        bun run build
 
-      - name: Run tests (Pest)
-        env:
-          DB_CONNECTION: mysql
-          DB_HOST: 127.0.0.1
-          DB_PORT: 3306
-          DB_DATABASE: test
-          DB_USERNAME: forge
-          DB_PASSWORD: secret
-        run: vendor/bin/pest --parallel --coverage=none
+    # ───── Run tests (Pest) ────────────────────────────────────────────
+    - name: Run tests (Pest)
+      env:
+        DB_CONNECTION: mysql
+        DB_HOST: 127.0.0.1
+        DB_PORT: 3306
+        DB_DATABASE: test
+        DB_USERNAME: forge
+        DB_PASSWORD: secret
+      run: vendor/bin/pest --parallel --coverage=none
 
-      - name: Trigger Forge deploy
-        if: github.ref == 'refs/heads/main' && success()
-        run: |
-          curl -X POST "https://forge.laravel.com/servers/938981/sites/2782664/deploy/http?token=ngY98OIJ3UGQ1NRdSYHHZAQLkuQIMITM4d2mhNYP"
-
+    # ───── Trigger Forge deploy on green push to main ─────────────────
+    - name: Trigger Forge deploy
+      if: github.ref == 'refs/heads/main' && success()
+      run: |
+        curl -s -X POST "https://forge.laravel.com/servers/938981/sites/2782664/deploy/http?token=ngY98OIJ3UGQ1NRdSYHHZAQLkuQIMITM4d2mhNYP"
