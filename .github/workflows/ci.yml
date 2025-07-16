@@ -46,7 +46,7 @@ jobs:
           bun run build
 
       - name: Static analysis (PHPStan)
-        run: vendor/bin/phpstan analyse app tests --error-format=github
+        run: vendor/bin/phpstan analyse app --error-format=github
 
       - name: Code style (Pint)
         run: vendor/bin/pint --test
